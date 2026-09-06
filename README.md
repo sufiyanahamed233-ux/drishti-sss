@@ -1,5 +1,6 @@
 ---
 license: cc-by-sa-4.0
+viewer: false
 task_categories:
   - object-detection
 tags:
@@ -12,6 +13,11 @@ tags:
 size_categories:
   - 1K<n<10K
 ---
+
+> **The preview viewer is off by design.** This is a YOLO-format detection set
+> (`{split}/images/*.jpg` + `{split}/labels/*.txt`), meant to be pulled with
+> `snapshot_download` and trained with Ultralytics — it is not a `load_dataset()`
+> dataset, and HF's auto-parquet converter cannot parse the paired label files.
 
 # DRISHTI — side-scan sonar training splits
 
