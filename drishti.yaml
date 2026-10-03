@@ -1,14 +1,14 @@
-path: D:/Sonar-Drishti/ml/data/splits
+path: C:/Users/Sufiyan Ahamed/Desktop/drishti-sss
+
 train: train/images
 val: val/images
 test: test/images
 
 task: detect
 
-nc: 5
+nc: 4
 names:
-  0: crab_pot
-  1: submarine_pipeline
-  2: shipwreck
-  3: ghost_net
-  4: mine_cylinder
+  0: submarine_pipeline
+  1: shipwreck
+  2: ghost_net
+  3: mine_cylinder
