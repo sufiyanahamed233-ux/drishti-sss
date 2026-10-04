@@ -15,9 +15,16 @@ from sqlalchemy.orm import Session
 from app.db.models import Scan as DB_Scan
 from app.db.session import get_db
 from app.schemas.report import ScanResult
+from app.schemas.scan_report import (
+    GeoJSONFeatureCollection,
+    InvestigationReportJSON,
+    build_geojson_investigation_report,
+    build_json_investigation_report,
+)
 
 
 router = APIRouter(prefix="/scans", tags=["scans"])
+
 
 
 @router.get(
@@ -89,3 +96,49 @@ def get_scan_image(scan_id: int, db: Session = Depends(get_db)) -> FileResponse:
         media_type="image/*",
         filename=os.path.basename(image_path),
     )
+
+
+@router.get(
+    "/{scan_id}/report/json",
+    response_model=InvestigationReportJSON,
+    summary="Get JSON investigation report for a scan",
+    response_description="Structured investigation report containing metadata, navigation, detections, and deterministic georeferencing",
+)
+def get_scan_report_json(scan_id: int, db: Session = Depends(get_db)) -> InvestigationReportJSON:
+    """
+    Generate and return a structured JSON investigation report for a sonar scan.
+
+    Includes platform navigation metadata, AI-derived YOLO detections, and
+    deterministic geolocation coordinates.
+    """
+    scan = db.query(DB_Scan).filter(DB_Scan.id == scan_id).first()
+    if scan is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Scan with ID {scan_id} not found",
+        )
+    return build_json_investigation_report(scan)
+
+
+@router.get(
+    "/{scan_id}/report/geojson",
+    response_model=GeoJSONFeatureCollection,
+    summary="Get GeoJSON investigation report for a scan",
+    response_description="Valid RFC 7946 GeoJSON FeatureCollection of georeferenced detections",
+)
+def get_scan_report_geojson(scan_id: int, db: Session = Depends(get_db)) -> GeoJSONFeatureCollection:
+    """
+    Generate and return a valid RFC 7946 GeoJSON FeatureCollection for a sonar scan.
+
+    Each georeferenced detection is exported as a Point Feature with [longitude, latitude]
+    coordinates. Detections with null coordinates are omitted from features.
+    Scans with zero detections return an empty FeatureCollection.
+    """
+    scan = db.query(DB_Scan).filter(DB_Scan.id == scan_id).first()
+    if scan is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Scan with ID {scan_id} not found",
+        )
+    return build_geojson_investigation_report(scan)
+
