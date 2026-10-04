@@ -8,12 +8,13 @@ from __future__ import annotations
 
 import os
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.db.models import Scan as DB_Scan
 from app.db.session import get_db
+from app.reports.pdf_generator import generate_scan_pdf_report
 from app.schemas.report import ScanResult
 from app.schemas.scan_report import (
     GeoJSONFeatureCollection,
@@ -21,6 +22,7 @@ from app.schemas.scan_report import (
     build_geojson_investigation_report,
     build_json_investigation_report,
 )
+
 
 
 router = APIRouter(prefix="/scans", tags=["scans"])
@@ -141,4 +143,43 @@ def get_scan_report_geojson(scan_id: int, db: Session = Depends(get_db)) -> GeoJ
             detail=f"Scan with ID {scan_id} not found",
         )
     return build_geojson_investigation_report(scan)
+
+
+@router.get(
+    "/{scan_id}/report/pdf",
+    summary="Get PDF investigation report for a scan",
+    response_description="Binary downloadable PDF investigation report",
+    responses={
+        200: {
+            "content": {"application/pdf": {}},
+            "description": "Downloadable PDF investigation report",
+        },
+        404: {"description": "Scan not found"},
+    },
+)
+def get_scan_report_pdf(scan_id: int, db: Session = Depends(get_db)) -> Response:
+    """
+    Generate and return a downloadable PDF investigation report for a sonar scan.
+
+    Includes platform navigation metadata, provenance & methodology disclosure,
+    detection summary and per-detection details, and georeferenced coordinates table.
+    """
+    scan = db.query(DB_Scan).filter(DB_Scan.id == scan_id).first()
+    if scan is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Scan with ID {scan_id} not found",
+        )
+
+    pdf_bytes = generate_scan_pdf_report(scan)
+    filename = f"drishti_sss_scan_{scan_id}_report.pdf"
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
+    )
+
 

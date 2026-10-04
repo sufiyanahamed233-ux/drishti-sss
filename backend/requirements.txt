@@ -19,3 +19,7 @@ httpx>=0.28.0               # ASGI test client for FastAPI
 # ── Detection (existing) ──────────────────────────────────────────────────────
 # ultralytics>=8.0.0        # loaded at runtime, not during API/DB tests
 numpy>=2.0.0
+
+# ── Report Generation ─────────────────────────────────────────────────────────
+reportlab>=4.0.0
+

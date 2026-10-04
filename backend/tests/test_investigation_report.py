@@ -449,3 +449,62 @@ class TestGeoJSONInvestigationReport:
         res = await client.get("/api/scans/999999/report/geojson")
         assert res.status_code == 404
         assert "not found" in res.json()["detail"].lower()
+
+
+class TestPDFInvestigationReport:
+    """Tests for GET /api/scans/{scan_id}/report/pdf."""
+
+    @pytest.mark.asyncio
+    async def test_pdf_report_valid_scan_with_detections(
+        self, client: AsyncClient, mock_db: Session
+    ) -> None:
+        """Valid scan with detections returns 200 application/pdf with proper attachment header."""
+        scan = _seed_scan_with_detections(mock_db)
+        res = await client.get(f"/api/scans/{scan.id}/report/pdf")
+        assert res.status_code == 200
+
+        # Check content type
+        assert res.headers["content-type"] == "application/pdf"
+
+        # Check content-disposition and filename
+        cd = res.headers.get("content-disposition", "")
+        assert "attachment" in cd
+        assert f"drishti_sss_scan_{scan.id}_report.pdf" in cd
+
+        # Check non-empty valid PDF binary payload
+        assert len(res.content) > 1000
+        assert res.content.startswith(b"%PDF-")
+
+    @pytest.mark.asyncio
+    async def test_pdf_report_zero_detections(
+        self, client: AsyncClient, mock_db: Session
+    ) -> None:
+        """Zero-detection scan successfully generates PDF without crashing."""
+        scan = _seed_scan_zero_detections(mock_db)
+        res = await client.get(f"/api/scans/{scan.id}/report/pdf")
+        assert res.status_code == 200
+        assert res.headers["content-type"] == "application/pdf"
+        assert res.content.startswith(b"%PDF-")
+        assert len(res.content) > 1000
+
+    @pytest.mark.asyncio
+    async def test_pdf_report_null_unmapped_coordinates(
+        self, client: AsyncClient, mock_db: Session
+    ) -> None:
+        """Scan with unmapped / null coordinates generates PDF with 'Not available' labels."""
+        scan = _seed_scan_with_null_coords(mock_db)
+        res = await client.get(f"/api/scans/{scan.id}/report/pdf")
+        assert res.status_code == 200
+        assert res.headers["content-type"] == "application/pdf"
+        assert res.content.startswith(b"%PDF-")
+        assert len(res.content) > 1000
+
+    @pytest.mark.asyncio
+    async def test_pdf_report_missing_scan_returns_404(
+        self, client: AsyncClient, mock_db: Session
+    ) -> None:
+        """Non-existent scan returns 404 Not Found."""
+        res = await client.get("/api/scans/999999/report/pdf")
+        assert res.status_code == 404
+        assert "not found" in res.json()["detail"].lower()
+
