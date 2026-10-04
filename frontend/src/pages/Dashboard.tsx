@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { UploadCloud } from 'lucide-react'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
 import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet'
@@ -220,18 +221,30 @@ function Dashboard() {
   return (
     <main className="min-h-screen bg-slate-950 p-8 text-white">
       <div className="mx-auto max-w-7xl">
-        <header className="mb-8">
-          <p className="mb-2 text-sm font-medium uppercase tracking-[0.25em] text-cyan-400">
-            DRISHTI • SONAR INTELLIGENCE
-          </p>
+        <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="mb-2 text-sm font-medium uppercase tracking-[0.25em] text-cyan-400">
+              DRISHTI • SONAR INTELLIGENCE
+            </p>
 
-          <h1 className="text-3xl font-bold">
-            Marine Debris &amp; Anomaly Investigation
-          </h1>
+            <h1 className="text-3xl font-bold">
+              Marine Debris &amp; Anomaly Investigation
+            </h1>
 
-          <p className="mt-2 text-slate-400">
-            AI-assisted side-scan sonar detection and deterministic georeferencing.
-          </p>
+            <p className="mt-2 text-slate-400">
+              AI-assisted side-scan sonar detection and deterministic georeferencing.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <Link
+              to="/batch-upload"
+              className="inline-flex items-center gap-2 rounded-lg bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-cyan-950/50 transition hover:bg-cyan-500 cursor-pointer"
+            >
+              <UploadCloud className="h-4 w-4" />
+              Batch Upload
+            </Link>
+          </div>
         </header>
 
         {/* ── Stats ── */}
