@@ -1,12 +1,18 @@
 """
 test_analysis.py
 ----------------
-Unit and integration tests for the Phase 3B batch scan analysis pipeline.
+Unit and integration tests for the Phase 3C batch scan analysis pipeline
+with per-detection sonar geometry.
 
 Coverage
 --------
 - Single scan with zero detections (persists scan, empty detections)
-- Single scan with multiple detections (persists scan and all linked detections)
+- Single scan with one detection and its own geometry
+- Multiple detections with different ranges/bearings producing distinct georeferencing results
+- Validation: Missing geometry for a detection returns HTTP 422
+- Validation: Duplicate detection_index is rejected with HTTP 422
+- Validation: Out-of-range detection_index is rejected with HTTP 422
+- Validation: Zero detections with non-empty target_geometries rejected with HTTP 422
 - Deterministic georeferencing integration (lat/lon, bearings, ground range)
 - SLANT range vs GROUND range handling
 - Batch analysis with multiple scans processed independently
@@ -21,6 +27,7 @@ from collections.abc import Generator
 from unittest.mock import MagicMock
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
 from sqlalchemy.orm import Session, sessionmaker
@@ -29,7 +36,7 @@ from app.api.analysis import run_batch_analysis, run_scan_analysis
 from app.db.models import Base, DataSource, Detection as DB_Detection, RangeType, Scan as DB_Scan
 from app.detection.yolo_detector import Detection, YOLODetector
 from app.georeferencing.engine import georeference
-from app.schemas.report import ScanInput
+from app.schemas.report import ScanInput, TargetGeometryInput
 
 
 # ---------------------------------------------------------------------------
@@ -57,10 +64,11 @@ def db_session() -> Generator[Session, None, None]:
 def _make_sample_input(
     scan_identity: str = "test-scan-001",
     image_path: str = "/data/sonar_001.png",
-    range_val: float = 50.0,
+    range_val: float | None = 50.0,
     range_type: str = "SLANT",
     altitude: float = 10.0,
     data_source: str = "REAL",
+    target_geometries: list[TargetGeometryInput] | None = None,
 ) -> ScanInput:
     return ScanInput(
         scan_identity=scan_identity,
@@ -73,6 +81,7 @@ def _make_sample_input(
         range_type=range_type,
         relative_bearing=15.0,
         data_source=data_source,
+        target_geometries=target_geometries or [],
     )
 
 
@@ -88,7 +97,10 @@ class TestZeroDetections:
         mock_detector = MagicMock(spec=YOLODetector)
         mock_detector.detect.return_value = []
 
-        scan_in = _make_sample_input(scan_identity="scan-zero-01")
+        scan_in = _make_sample_input(
+            scan_identity="scan-zero-01",
+            target_geometries=[],
+        )
         result = run_scan_analysis(scan_in, db_session, mock_detector)
 
         assert result.scan_identity == "scan-zero-01"
@@ -101,54 +113,166 @@ class TestZeroDetections:
         assert db_scan.sonar_latitude == pytest.approx(13.0827)
         assert len(db_scan.detections) == 0
 
+    def test_zero_detections_with_unexpected_geometries_rejected(self, db_session: Session) -> None:
+        mock_detector = MagicMock(spec=YOLODetector)
+        mock_detector.detect.return_value = []
+
+        scan_in = _make_sample_input(
+            scan_identity="scan-zero-err",
+            target_geometries=[
+                TargetGeometryInput(detection_index=0, range=50.0, range_type="SLANT", relative_bearing=10.0)
+            ],
+        )
+        with pytest.raises(HTTPException) as exc_info:
+            run_scan_analysis(scan_in, db_session, mock_detector)
+        assert exc_info.value.status_code == 422
+
 
 # ---------------------------------------------------------------------------
-# Tests: Multiple Detections
+# Tests: Per-Detection Geometry & Multiple Detections (Phase 3C)
 # ---------------------------------------------------------------------------
 
 
-class TestMultipleDetections:
-    """Verifies that multiple detections are properly georeferenced and persisted."""
+class TestPerDetectionGeometry:
+    """Verifies per-detection geometry inputs, validation, and distinct calculations."""
 
-    def test_multiple_detections_linked_to_scan(self, db_session: Session) -> None:
+    def test_single_detection_with_own_geometry(self, db_session: Session) -> None:
         mock_detector = MagicMock(spec=YOLODetector)
         mock_detector.detect.return_value = [
-            Detection(
-                class_id=1,
-                class_name="shipwreck",
-                confidence=0.92,
-                x1=10.0,
-                y1=20.0,
-                x2=80.0,
-                y2=90.0,
-            ),
-            Detection(
-                class_id=3,
-                class_name="mine_cylinder",
-                confidence=0.85,
-                x1=150.0,
-                y1=160.0,
-                x2=200.0,
-                y2=210.0,
-            ),
+            Detection(class_id=0, class_name="submarine_pipeline", confidence=0.88, x1=5, y1=5, x2=50, y2=50)
         ]
 
-        scan_in = _make_sample_input(scan_identity="scan-multi-01")
+        scan_in = _make_sample_input(
+            scan_identity="scan-single-01",
+            altitude=10.0,
+            target_geometries=[
+                TargetGeometryInput(detection_index=0, range=60.0, range_type="SLANT", relative_bearing=25.0)
+            ],
+        )
+        result = run_scan_analysis(scan_in, db_session, mock_detector)
+
+        assert result.detection_count == 1
+        det = result.detections[0]
+        assert det.class_name == "submarine_pipeline"
+        assert det.range_m == pytest.approx(60.0)
+        assert det.relative_bearing == pytest.approx(25.0)
+        # Ground range = sqrt(60^2 - 10^2) = sqrt(3500) ≈ 59.16
+        assert det.ground_range_m == pytest.approx(math.sqrt(60.0**2 - 10.0**2), abs=1e-3)
+
+    def test_multiple_detections_produce_different_georeferencing(self, db_session: Session) -> None:
+        """Each detection uses its own geometry and computes distinct lat/lon."""
+        mock_detector = MagicMock(spec=YOLODetector)
+        mock_detector.detect.return_value = [
+            Detection(class_id=1, class_name="shipwreck", confidence=0.92, x1=10, y1=20, x2=80, y2=90),
+            Detection(class_id=3, class_name="mine_cylinder", confidence=0.85, x1=150, y1=160, x2=200, y2=210),
+        ]
+
+        scan_in = _make_sample_input(
+            scan_identity="scan-multi-diff",
+            altitude=10.0,
+            target_geometries=[
+                TargetGeometryInput(detection_index=0, range=40.0, range_type="SLANT", relative_bearing=-30.0),
+                TargetGeometryInput(detection_index=1, range=100.0, range_type="GROUND", relative_bearing=60.0),
+            ],
+        )
         result = run_scan_analysis(scan_in, db_session, mock_detector)
 
         assert result.detection_count == 2
-        assert len(result.detections) == 2
-        classes = {d.class_name for d in result.detections}
-        assert classes == {"shipwreck", "mine_cylinder"}
+        det0 = result.detections[0]
+        det1 = result.detections[1]
 
-        # Check DB persistence
-        db_scan = db_session.query(DB_Scan).filter(DB_Scan.scan_identity == "scan-multi-01").first()
+        # Geometry values must be specific to each detection
+        assert det0.range_m == pytest.approx(40.0)
+        assert det0.relative_bearing == pytest.approx(-30.0)
+        assert det0.ground_range_m == pytest.approx(math.sqrt(40.0**2 - 10.0**2), abs=1e-3)
+
+        assert det1.range_m == pytest.approx(100.0)
+        assert det1.relative_bearing == pytest.approx(60.0)
+        assert det1.ground_range_m == pytest.approx(100.0)  # GROUND range
+
+        # Latitudes and longitudes must be distinct
+        assert det0.target_latitude != det1.target_latitude
+        assert det0.target_longitude != det1.target_longitude
+        assert det0.absolute_bearing != det1.absolute_bearing
+
+        # Verify DB persistence
+        db_scan = db_session.query(DB_Scan).filter(DB_Scan.scan_identity == "scan-multi-diff").first()
         assert db_scan is not None
         assert len(db_scan.detections) == 2
-        for db_det in db_scan.detections:
-            assert db_det.scan_id == db_scan.id
-            assert db_det.target_latitude is not None
-            assert db_det.target_longitude is not None
+        assert db_scan.detections[0].range_m == pytest.approx(40.0)
+        assert db_scan.detections[1].range_m == pytest.approx(100.0)
+
+    def test_missing_geometry_for_detection_rejected(self, db_session: Session) -> None:
+        """Scan has 2 detections but only geometry for index 0 is provided."""
+        mock_detector = MagicMock(spec=YOLODetector)
+        mock_detector.detect.return_value = [
+            Detection(class_id=1, class_name="shipwreck", confidence=0.9, x1=0, y1=0, x2=20, y2=20),
+            Detection(class_id=2, class_name="ghost_net", confidence=0.8, x1=30, y1=30, x2=50, y2=50),
+        ]
+
+        scan_in = _make_sample_input(
+            scan_identity="missing-geom",
+            target_geometries=[
+                TargetGeometryInput(detection_index=0, range=50.0, range_type="SLANT", relative_bearing=0.0)
+            ],
+        )
+        with pytest.raises(HTTPException) as exc_info:
+            run_scan_analysis(scan_in, db_session, mock_detector)
+        assert exc_info.value.status_code == 422
+        assert "missing" in exc_info.value.detail.lower()
+
+    def test_no_geometry_when_detections_exist_rejected(self, db_session: Session) -> None:
+        """Scan has 1 detection but target_geometries is completely empty."""
+        mock_detector = MagicMock(spec=YOLODetector)
+        mock_detector.detect.return_value = [
+            Detection(class_id=1, class_name="shipwreck", confidence=0.9, x1=0, y1=0, x2=20, y2=20)
+        ]
+
+        scan_in = _make_sample_input(
+            scan_identity="no-geom",
+            target_geometries=[],
+        )
+        with pytest.raises(HTTPException) as exc_info:
+            run_scan_analysis(scan_in, db_session, mock_detector)
+        assert exc_info.value.status_code == 422
+
+    def test_duplicate_detection_index_rejected(self, db_session: Session) -> None:
+        """Two geometries with the same detection_index=0."""
+        mock_detector = MagicMock(spec=YOLODetector)
+        mock_detector.detect.return_value = [
+            Detection(class_id=1, class_name="shipwreck", confidence=0.9, x1=0, y1=0, x2=20, y2=20),
+            Detection(class_id=2, class_name="ghost_net", confidence=0.8, x1=30, y1=30, x2=50, y2=50),
+        ]
+
+        scan_in = _make_sample_input(
+            scan_identity="dup-index",
+            target_geometries=[
+                TargetGeometryInput(detection_index=0, range=40.0, range_type="SLANT", relative_bearing=0.0),
+                TargetGeometryInput(detection_index=0, range=50.0, range_type="SLANT", relative_bearing=10.0),
+            ],
+        )
+        with pytest.raises(HTTPException) as exc_info:
+            run_scan_analysis(scan_in, db_session, mock_detector)
+        assert exc_info.value.status_code == 422
+        assert "duplicate" in exc_info.value.detail.lower()
+
+    def test_out_of_range_detection_index_rejected(self, db_session: Session) -> None:
+        """Scan has 1 detection, but target_geometry has detection_index=5."""
+        mock_detector = MagicMock(spec=YOLODetector)
+        mock_detector.detect.return_value = [
+            Detection(class_id=1, class_name="shipwreck", confidence=0.9, x1=0, y1=0, x2=20, y2=20)
+        ]
+
+        scan_in = _make_sample_input(
+            scan_identity="out-of-range",
+            target_geometries=[
+                TargetGeometryInput(detection_index=5, range=50.0, range_type="SLANT", relative_bearing=0.0)
+            ],
+        )
+        with pytest.raises(HTTPException) as exc_info:
+            run_scan_analysis(scan_in, db_session, mock_detector)
+        assert exc_info.value.status_code == 422
+        assert "outside the valid range" in exc_info.value.detail.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -167,9 +291,10 @@ class TestGeoreferencingIntegration:
 
         scan_in = _make_sample_input(
             scan_identity="geo-test-01",
-            range_val=50.0,
-            range_type="SLANT",
             altitude=10.0,
+            target_geometries=[
+                TargetGeometryInput(detection_index=0, range=50.0, range_type="SLANT", relative_bearing=15.0)
+            ],
         )
         result = run_scan_analysis(scan_in, db_session, mock_detector)
         det_result = result.detections[0]
@@ -198,9 +323,10 @@ class TestGeoreferencingIntegration:
         # 1. Slant range: 50m slant, 30m altitude -> ground range = sqrt(50^2 - 30^2) = 40m
         scan_slant = _make_sample_input(
             scan_identity="slant-calc",
-            range_val=50.0,
-            range_type="SLANT",
             altitude=30.0,
+            target_geometries=[
+                TargetGeometryInput(detection_index=0, range=50.0, range_type="SLANT", relative_bearing=0.0)
+            ],
         )
         res_slant = run_scan_analysis(scan_slant, db_session, mock_detector)
         assert res_slant.detections[0].ground_range_m == pytest.approx(40.0, abs=1e-4)
@@ -208,9 +334,10 @@ class TestGeoreferencingIntegration:
         # 2. Ground range: 50m ground range directly
         scan_ground = _make_sample_input(
             scan_identity="ground-calc",
-            range_val=50.0,
-            range_type="GROUND",
             altitude=30.0,
+            target_geometries=[
+                TargetGeometryInput(detection_index=0, range=50.0, range_type="GROUND", relative_bearing=0.0)
+            ],
         )
         res_ground = run_scan_analysis(scan_ground, db_session, mock_detector)
         assert res_ground.detections[0].ground_range_m == pytest.approx(50.0, abs=1e-4)
@@ -241,9 +368,22 @@ class TestBatchAnalysis:
         mock_detector.detect.side_effect = side_effect
 
         batch = [
-            _make_sample_input(scan_identity="scan1", image_path="/data/scan1.png"),
-            _make_sample_input(scan_identity="scan2", image_path="/data/scan2.png"),
-            _make_sample_input(scan_identity="scan3", image_path="/data/scan3.png"),
+            _make_sample_input(scan_identity="scan1", image_path="/data/scan1.png", target_geometries=[]),
+            _make_sample_input(
+                scan_identity="scan2",
+                image_path="/data/scan2.png",
+                target_geometries=[
+                    TargetGeometryInput(detection_index=0, range=50.0, range_type="SLANT", relative_bearing=10.0)
+                ],
+            ),
+            _make_sample_input(
+                scan_identity="scan3",
+                image_path="/data/scan3.png",
+                target_geometries=[
+                    TargetGeometryInput(detection_index=0, range=40.0, range_type="SLANT", relative_bearing=-15.0),
+                    TargetGeometryInput(detection_index=1, range=70.0, range_type="GROUND", relative_bearing=35.0),
+                ],
+            ),
         ]
 
         batch_result = run_batch_analysis(batch, db_session, mock_detector)
@@ -270,7 +410,7 @@ class TestMetadataAndDuplicates:
         mock_detector = MagicMock(spec=YOLODetector)
         mock_detector.detect.return_value = []
 
-        scan_in = _make_sample_input(scan_identity="unique-id-123")
+        scan_in = _make_sample_input(scan_identity="unique-id-123", target_geometries=[])
         run_scan_analysis(scan_in, db_session, mock_detector)
         assert db_session.query(DB_Scan).count() == 1
 
@@ -283,6 +423,113 @@ class TestMetadataAndDuplicates:
         mock_detector.detect.return_value = []
 
         for src in ["REAL", "DEMO", "SIMULATED"]:
-            scan_in = _make_sample_input(scan_identity=f"scan-{src}", data_source=src)
+            scan_in = _make_sample_input(scan_identity=f"scan-{src}", data_source=src, target_geometries=[])
             result = run_scan_analysis(scan_in, db_session, mock_detector)
             assert result.data_source.lower() == src.lower()
+
+
+# ---------------------------------------------------------------------------
+# Tests: range_type Literal validation (Phase 3C strict constraint)
+# ---------------------------------------------------------------------------
+
+
+class TestRangeTypeValidation:
+    """Verifies that range_type is strictly constrained to 'SLANT' or 'GROUND'."""
+
+    # --- TargetGeometryInput ---
+
+    def test_target_geometry_slant_accepted(self) -> None:
+        """SLANT must be accepted by TargetGeometryInput."""
+        tg = TargetGeometryInput(detection_index=0, range=50.0, range_type="SLANT", relative_bearing=0.0)
+        assert tg.range_type == "SLANT"
+
+    def test_target_geometry_ground_accepted(self) -> None:
+        """GROUND must be accepted by TargetGeometryInput."""
+        tg = TargetGeometryInput(detection_index=0, range=50.0, range_type="GROUND", relative_bearing=0.0)
+        assert tg.range_type == "GROUND"
+
+    def test_target_geometry_invalid_range_type_rejected(self) -> None:
+        """Any value other than SLANT/GROUND must raise a Pydantic ValidationError."""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            TargetGeometryInput(detection_index=0, range=50.0, range_type="OBLIQUE", relative_bearing=0.0)
+
+    def test_target_geometry_lowercase_slant_rejected(self) -> None:
+        """Lowercase 'slant' is not a valid Literal value and must be rejected."""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            TargetGeometryInput(detection_index=0, range=50.0, range_type="slant", relative_bearing=0.0)
+
+    def test_target_geometry_empty_string_rejected(self) -> None:
+        """An empty string must be rejected."""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            TargetGeometryInput(detection_index=0, range=50.0, range_type="", relative_bearing=0.0)
+
+    # --- ScanInput ---
+
+    def test_scan_input_slant_accepted(self) -> None:
+        """SLANT must be accepted by ScanInput."""
+        scan = ScanInput(
+            image_path="/tmp/img.png",
+            sonar_latitude=0.0,
+            sonar_longitude=0.0,
+            heading=0.0,
+            altitude=10.0,
+            range_type="SLANT",
+        )
+        assert scan.range_type == "SLANT"
+
+    def test_scan_input_ground_accepted(self) -> None:
+        """GROUND must be accepted by ScanInput."""
+        scan = ScanInput(
+            image_path="/tmp/img.png",
+            sonar_latitude=0.0,
+            sonar_longitude=0.0,
+            heading=0.0,
+            altitude=10.0,
+            range_type="GROUND",
+        )
+        assert scan.range_type == "GROUND"
+
+    def test_scan_input_invalid_range_type_rejected(self) -> None:
+        """Any value other than SLANT/GROUND must raise a Pydantic ValidationError for ScanInput."""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            ScanInput(
+                image_path="/tmp/img.png",
+                sonar_latitude=0.0,
+                sonar_longitude=0.0,
+                heading=0.0,
+                altitude=10.0,
+                range_type="INVALID_TYPE",
+            )
+
+    def test_scan_input_lowercase_ground_rejected(self) -> None:
+        """Lowercase 'ground' is not a valid Literal value and must be rejected for ScanInput."""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            ScanInput(
+                image_path="/tmp/img.png",
+                sonar_latitude=0.0,
+                sonar_longitude=0.0,
+                heading=0.0,
+                altitude=10.0,
+                range_type="ground",
+            )
+
+    def test_scan_input_default_range_type_is_slant(self) -> None:
+        """When range_type is omitted, it must default to 'SLANT'."""
+        scan = ScanInput(
+            image_path="/tmp/img.png",
+            sonar_latitude=0.0,
+            sonar_longitude=0.0,
+            heading=0.0,
+            altitude=10.0,
+        )
+        assert scan.range_type == "SLANT"

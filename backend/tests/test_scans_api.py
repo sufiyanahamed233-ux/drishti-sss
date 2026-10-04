@@ -118,6 +118,7 @@ class TestAnalyzeEndpoint:
                     "range_type": "SLANT",
                     "relative_bearing": 0.0,
                     "data_source": "REAL",
+                    "target_geometries": [],
                 },
                 {
                     "scan_identity": "scan_with_det",
@@ -130,6 +131,14 @@ class TestAnalyzeEndpoint:
                     "range_type": "SLANT",
                     "relative_bearing": 30.0,
                     "data_source": "DEMO",
+                    "target_geometries": [
+                        {
+                            "detection_index": 0,
+                            "range": 60.0,
+                            "range_type": "SLANT",
+                            "relative_bearing": 30.0,
+                        }
+                    ],
                 },
             ]
         }
@@ -243,6 +252,14 @@ class TestScansCrudEndpoints:
                         "range": 50.0,
                         "range_type": "SLANT",
                         "relative_bearing": 45.0,
+                        "target_geometries": [
+                            {
+                                "detection_index": 0,
+                                "range": 50.0,
+                                "range_type": "SLANT",
+                                "relative_bearing": 45.0,
+                            }
+                        ],
                     }
                 ]
             },
@@ -272,3 +289,74 @@ class TestScansCrudEndpoints:
         response = await client.get("/api/scans/999999")
         assert response.status_code == 404
         assert "not found" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    async def test_analyze_missing_target_geometries_returns_422(
+        self, client: AsyncClient, mock_detector: MagicMock
+    ) -> None:
+        """API returns 422 when YOLO finds detections but target_geometries is omitted."""
+        mock_detector.detect.return_value = [
+            Detection(class_id=1, class_name="shipwreck", confidence=0.9, x1=0, y1=0, x2=20, y2=20)
+        ]
+        payload = [
+            {
+                "scan_identity": "missing-geom-api",
+                "image_path": "/data/test.png",
+                "sonar_latitude": 13.0,
+                "sonar_longitude": 80.0,
+                "heading": 0.0,
+                "altitude": 10.0,
+            }
+        ]
+        response = await client.post("/api/scans/analyze", json=payload)
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_analyze_duplicate_detection_index_returns_422(
+        self, client: AsyncClient, mock_detector: MagicMock
+    ) -> None:
+        """API returns 422 when duplicate detection_index is provided."""
+        mock_detector.detect.return_value = [
+            Detection(class_id=1, class_name="shipwreck", confidence=0.9, x1=0, y1=0, x2=20, y2=20),
+            Detection(class_id=2, class_name="ghost_net", confidence=0.8, x1=10, y1=10, x2=30, y2=30),
+        ]
+        payload = [
+            {
+                "scan_identity": "dup-geom-api",
+                "image_path": "/data/test.png",
+                "sonar_latitude": 13.0,
+                "sonar_longitude": 80.0,
+                "heading": 0.0,
+                "altitude": 10.0,
+                "target_geometries": [
+                    {"detection_index": 0, "range": 40.0, "relative_bearing": 0.0},
+                    {"detection_index": 0, "range": 50.0, "relative_bearing": 10.0},
+                ],
+            }
+        ]
+        response = await client.post("/api/scans/analyze", json=payload)
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_analyze_out_of_range_detection_index_returns_422(
+        self, client: AsyncClient, mock_detector: MagicMock
+    ) -> None:
+        """API returns 422 when detection_index exceeds number of detections."""
+        mock_detector.detect.return_value = [
+            Detection(class_id=1, class_name="shipwreck", confidence=0.9, x1=0, y1=0, x2=20, y2=20)
+        ]
+        payload = [
+            {
+                "scan_identity": "out-of-range-api",
+                "image_path": "/data/test.png",
+                "sonar_latitude": 13.0,
+                "sonar_longitude": 80.0,
+                "heading": 0.0,
+                "altitude": 10.0,
+                "target_geometries": [
+                    {"detection_index": 3, "range": 40.0, "relative_bearing": 0.0}
+                ],
+            }
+        ]
+        response = await client.post("/api/scans/analyze", json=payload)
+        assert response.status_code == 422

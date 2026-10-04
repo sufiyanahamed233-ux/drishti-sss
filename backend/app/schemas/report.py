@@ -9,7 +9,7 @@ Used by the batch scan analysis pipeline (Phase 3B) and REST API endpoints.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Annotated, Any, Sequence, Union
+from typing import Annotated, Any, Literal, Sequence, Union
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -209,6 +209,23 @@ class ScanResult(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class TargetGeometryInput(BaseModel):
+    """Per-detection sonar geometry observables for deterministic georeferencing."""
+
+    detection_index: int = Field(..., ge=0, description="Zero-based index of the YOLO detection")
+    range: float = Field(..., ge=0.0, description="Range to the target in metres")
+    range_type: Literal["SLANT", "GROUND"] = Field(default="SLANT", description="SLANT or GROUND range type")
+    relative_bearing: float = Field(default=0.0, description="Relative bearing to the target in degrees")
+
+    @model_validator(mode="before")
+    @classmethod
+    def handle_aliases(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "range" not in data and "range_m" in data:
+                data["range"] = data["range_m"]
+        return data
+
+
 class ScanInput(BaseModel):
     """Input payload for a single sonar scan in a batch analysis request."""
 
@@ -217,13 +234,17 @@ class ScanInput(BaseModel):
     sonar_longitude: float = Field(..., ge=-180.0, le=180.0, description="WGS-84 longitude (deg)")
     heading: float = Field(..., description="Platform heading in degrees [0, 360)")
     altitude: float = Field(..., gt=0.0, description="Platform altitude above seabed in metres")
-    range: float = Field(..., ge=0.0, description="Observable range in metres")
-    range_type: str = Field(default="SLANT", description="SLANT or GROUND")
-    relative_bearing: float = Field(default=0.0, description="Relative bearing to target in degrees")
+    range: float | None = Field(default=None, ge=0.0, description="Optional scan-level observable range in metres")
+    range_type: Literal["SLANT", "GROUND"] = Field(default="SLANT", description="SLANT or GROUND")
+    relative_bearing: float | None = Field(default=None, description="Optional scan-level relative bearing in degrees")
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     data_source: str = Field(default="REAL", description="REAL, DEMO, or SIMULATED")
     scan_identity: str | None = Field(default=None, description="Optional scan identifier")
     notes: str | None = Field(default=None, description="Optional operator notes")
+    target_geometries: list[TargetGeometryInput] = Field(
+        default_factory=list,
+        description="Per-detection geometry inputs matching YOLO detections",
+    )
 
     @model_validator(mode="before")
     @classmethod

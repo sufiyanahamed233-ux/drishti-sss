@@ -86,12 +86,57 @@ def run_scan_analysis(
 
     # 3. Run YOLO inference
     detections = detector.detect(scan_input.image_path)
+    num_detections = len(detections)
 
-    # 4. Georeference detections deterministically
+    # 4. Validate per-detection target geometry inputs (Phase 3C)
+    target_geoms = scan_input.target_geometries or []
+
+    if num_detections == 0:
+        if target_geoms:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Scan has 0 detections, but {len(target_geoms)} target_geometry entries were provided.",
+            )
+    else:
+        if not target_geoms:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Scan has {num_detections} detection(s), but target_geometries is empty.",
+            )
+
+        indices = [tg.detection_index for tg in target_geoms]
+
+        # Reject duplicate detection_index values
+        if len(indices) != len(set(indices)):
+            raise HTTPException(
+                status_code=422,
+                detail="Duplicate detection_index found in target_geometries.",
+            )
+
+        # Reject out-of-range detection_index values
+        for idx in indices:
+            if idx < 0 or idx >= num_detections:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"detection_index {idx} is outside the valid range [0, {num_detections - 1}].",
+                )
+
+        # Reject missing detection indices
+        missing = set(range(num_detections)) - set(indices)
+        if missing:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Missing target_geometry for detection index/indices: {sorted(missing)}.",
+            )
+
+    # 5. Georeference each detection using its own geometry
+    geom_by_idx = {tg.detection_index: tg for tg in target_geoms}
     db_detections: list[DB_Detection] = []
-    for det in detections:
-        det_range = float(scan_input.range)
-        det_bearing = float(scan_input.relative_bearing)
+    for i, det in enumerate(detections):
+        tg = geom_by_idx[i]
+        det_range = float(tg.range)
+        det_bearing = float(tg.relative_bearing)
+        det_range_type = tg.range_type
 
         geo = georeference(
             sonar_lat=float(scan_input.sonar_latitude),
@@ -100,7 +145,7 @@ def run_scan_analysis(
             sonar_altitude=float(scan_input.altitude),
             target_slant_range=det_range,
             target_relative_bearing=det_bearing,
-            range_type=scan_input.range_type,
+            range_type=det_range_type,
         )
 
         db_det = DB_Detection(
@@ -119,7 +164,14 @@ def run_scan_analysis(
         )
         db_detections.append(db_det)
 
-    # 5. Persist Scan record (including zero-detection scans)
+    # 6. Persist Scan record (including zero-detection scans)
+    scan_range_m = float(scan_input.range) if scan_input.range is not None else None
+    scan_rel_bearing = (
+        float(scan_input.relative_bearing)
+        if scan_input.relative_bearing is not None
+        else None
+    )
+
     db_scan = DB_Scan(
         scan_identity=scan_identity,
         image_path=scan_input.image_path,
@@ -128,8 +180,8 @@ def run_scan_analysis(
         heading=float(scan_input.heading),
         altitude=float(scan_input.altitude),
         range_type=range_type_enum,
-        range_m=float(scan_input.range),
-        relative_bearing=float(scan_input.relative_bearing),
+        range_m=scan_range_m,
+        relative_bearing=scan_rel_bearing,
         timestamp=scan_input.timestamp,
         data_source=data_source_enum,
         notes=scan_input.notes,
