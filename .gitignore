@@ -16,3 +16,9 @@ venv/
 # IDE
 .vscode/
 .idea/
+
+# Local benchmark/test data
+accuracy_test_100/
+benchmark_100/
+data/
+investigation_batch/
