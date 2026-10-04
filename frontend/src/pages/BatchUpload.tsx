@@ -3,8 +3,11 @@ import { Link, useNavigate } from 'react-router-dom'
 import {
   AlertCircle,
   ArrowLeft,
+  ArrowRight,
   CheckCircle2,
   ChevronRight,
+  Compass,
+  Crosshair,
   ExternalLink,
   FileSpreadsheet,
   FolderUp,
@@ -14,6 +17,7 @@ import {
   RotateCcw,
   Trash2,
   UploadCloud,
+  Zap,
 } from 'lucide-react'
 import { analyzeBatch, ApiError } from '../services/api'
 import type { BatchAnalysisResult } from '../types/api'
@@ -193,59 +197,197 @@ export default function BatchUpload() {
     if (csvInputRef.current) csvInputRef.current.value = ''
   }
 
-  const isFormReady =
-    images.length > 0 &&
-    navigationFile !== null &&
-    navigationFile.name.toLowerCase() === 'navigation.csv' &&
-    !isAnalyzing
+  const isCsvValid =
+    navigationFile !== null && navigationFile.name.toLowerCase() === 'navigation.csv'
+
+  const isFormReady = images.length > 0 && isCsvValid && !isAnalyzing
+
+  const step1Complete = images.length > 0
+  const step2Complete = isCsvValid
+  const step3Ready = isFormReady
 
   return (
-    <main className="min-h-screen bg-slate-950 p-6 md:p-8 text-white">
-      <div className="mx-auto max-w-6xl">
-        {/* Navigation Breadcrumb */}
-        <div className="mb-6 flex items-center justify-between">
-          <Link
-            to="/"
-            className="inline-flex items-center gap-2 text-sm font-medium text-slate-400 transition hover:text-cyan-400"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back to Dashboard
-          </Link>
+    <div className="min-h-screen w-full bg-[#0a0d14] text-slate-100 antialiased">
+      {/* ── TOP MISSION-CONTROL APP HEADER ────────────────────────────────────── */}
+      <header className="sticky top-0 z-50 w-full border-b border-slate-800 bg-[#0d1117]/95 backdrop-blur-md">
+        <div className="mx-auto flex h-16 w-full max-w-[1720px] items-center justify-between px-4 sm:px-6 lg:px-8 xl:px-10">
+          {/* Logo & Brand Identity */}
+          <div className="flex items-center gap-3 sm:gap-4">
+            <Link
+              to="/"
+              className="flex items-center gap-3 group transition hover:opacity-90 cursor-pointer"
+            >
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-cyan-500/40 bg-gradient-to-br from-cyan-500/20 to-blue-600/10 text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.25)]">
+                <Crosshair className="h-5 w-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-lg font-black tracking-wider text-white">DRISHTI</span>
+                  <span className="rounded bg-cyan-500/15 border border-cyan-500/30 px-1.5 py-0.5 text-[10px] font-bold text-cyan-300">
+                    SSS INTEL
+                  </span>
+                </div>
+                <p className="hidden text-[10px] uppercase tracking-widest text-slate-400 sm:block">
+                  Naval Forensic Sonar Analytics
+                </p>
+              </div>
+            </Link>
+          </div>
 
-          <span className="text-xs uppercase tracking-widest text-slate-500">
-            FROZEN MVP • BATCH INGESTION
-          </span>
+          {/* Header Action & Status Telemetry */}
+          <div className="flex items-center gap-3 sm:gap-5">
+            <div className="hidden items-center gap-2 rounded-lg border border-cyan-500/20 bg-cyan-500/10 px-3 py-1.5 text-xs text-cyan-400 md:flex">
+              <span className="h-2 w-2 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee] animate-pulse" />
+              <span className="font-semibold uppercase tracking-wider">Acoustic Ingestion Port</span>
+            </div>
+
+            <Link
+              to="/"
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800/90 px-3.5 py-2 text-xs font-semibold text-slate-200 shadow transition hover:border-slate-600 hover:bg-slate-700 hover:text-white cursor-pointer"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              <span>Back to Dashboard</span>
+            </Link>
+          </div>
+        </div>
+      </header>
+
+      {/* ── MAIN VIEWPORT CONTAINER ───────────────────────────────────────────── */}
+      <main className="mx-auto w-full max-w-[1720px] px-4 py-6 sm:px-6 sm:py-8 lg:px-8 xl:px-10">
+        {/* ── BREADCRUMB & HERO SUBHEADER ────────────────────────────────────── */}
+        <div className="mb-6 flex flex-col gap-2 border-b border-slate-800/80 pb-5 md:flex-row md:items-end md:justify-between">
+          <div>
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-cyan-400">
+              <Zap className="h-3.5 w-3.5" />
+              Multi-Scan Investigation Ingestion Pipeline
+            </div>
+            <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-white sm:text-3xl lg:text-4xl">
+              Batch Sonar Upload &amp; Georeference Engine
+            </h1>
+            <p className="mt-1 max-w-3xl text-sm text-slate-400">
+              Ingest acoustic side-scan sonar image swathes paired with precision navigation telemetry.
+              The pipeline executes YOLO target detection, calculates slant-range corrections, and persists
+              georeferenced anomalies to the forensic investigation database.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3 text-xs font-mono text-slate-400">
+            <span className="rounded border border-slate-800 bg-slate-900 px-2.5 py-1 text-slate-400">
+              FROZEN MVP PIPELINE
+            </span>
+          </div>
         </div>
 
-        {/* Page Header */}
-        <header className="mb-8">
-          <p className="mb-2 text-sm font-medium uppercase tracking-[0.25em] text-cyan-400">
-            DRISHTI • INVESTIGATION BATCH
-          </p>
-          <h1 className="text-3xl font-bold">Batch Sonar Upload &amp; Analysis</h1>
-          <p className="mt-2 text-slate-400">
-            Upload investigation batches containing raw sonar image files and platform navigation
-            metadata for automated AI anomaly detection and deterministic georeferencing.
-          </p>
-        </header>
+        {/* ── STEP PROGRESS WORKFLOW BANNER ───────────────────────────────────── */}
+        <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
+          {/* Step 1 Pill */}
+          <div
+            className={`flex items-center gap-3.5 rounded-xl border p-4 transition-all ${
+              step1Complete
+                ? 'border-cyan-500/40 bg-[#0f172a]/95 text-white shadow-[0_0_15px_rgba(6,182,212,0.15)]'
+                : 'border-slate-800 bg-slate-900/50 text-slate-400'
+            }`}
+          >
+            <div
+              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border text-sm font-bold ${
+                step1Complete
+                  ? 'border-cyan-400 bg-cyan-500/20 text-cyan-300'
+                  : 'border-slate-700 bg-slate-800 text-slate-400'
+              }`}
+            >
+              {step1Complete ? <CheckCircle2 className="h-5 w-5 text-cyan-400" /> : '01'}
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                Step 1
+              </div>
+              <div className="truncate text-sm font-bold text-slate-100">
+                Acoustic Sonar Scans
+              </div>
+              <div className="text-xs text-slate-400 font-mono">
+                {images.length > 0 ? `${images.length} images staged` : 'Select .jpg / .png'}
+              </div>
+            </div>
+          </div>
 
-        {/* Error notification banner */}
+          {/* Step 2 Pill */}
+          <div
+            className={`flex items-center gap-3.5 rounded-xl border p-4 transition-all ${
+              step2Complete
+                ? 'border-emerald-500/40 bg-[#0f172a]/95 text-white shadow-[0_0_15px_rgba(16,185,129,0.15)]'
+                : 'border-slate-800 bg-slate-900/50 text-slate-400'
+            }`}
+          >
+            <div
+              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border text-sm font-bold ${
+                step2Complete
+                  ? 'border-emerald-400 bg-emerald-500/20 text-emerald-300'
+                  : 'border-slate-700 bg-slate-800 text-slate-400'
+              }`}
+            >
+              {step2Complete ? <CheckCircle2 className="h-5 w-5 text-emerald-400" /> : '02'}
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                Step 2
+              </div>
+              <div className="truncate text-sm font-bold text-slate-100">
+                Navigation Metadata
+              </div>
+              <div className="text-xs text-slate-400 font-mono">
+                {step2Complete ? 'navigation.csv verified' : 'Requires navigation.csv'}
+              </div>
+            </div>
+          </div>
+
+          {/* Step 3 Pill */}
+          <div
+            className={`flex items-center gap-3.5 rounded-xl border p-4 transition-all ${
+              step3Ready
+                ? 'border-amber-500/40 bg-[#0f172a]/95 text-white shadow-[0_0_15px_rgba(245,158,11,0.15)]'
+                : 'border-slate-800 bg-slate-900/50 text-slate-400'
+            }`}
+          >
+            <div
+              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border text-sm font-bold ${
+                step3Ready
+                  ? 'border-amber-400 bg-amber-500/20 text-amber-300'
+                  : 'border-slate-700 bg-slate-800 text-slate-400'
+              }`}
+            >
+              <Zap className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                Step 3
+              </div>
+              <div className="truncate text-sm font-bold text-slate-100">
+                AI Detection &amp; Georef
+              </div>
+              <div className="text-xs text-slate-400 font-mono">
+                {step3Ready ? 'Ready to analyze' : 'Awaiting files'}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── ALERTS / NOTIFICATIONS ─────────────────────────────────────────── */}
         {apiError && (
-          <div className="mb-8 rounded-xl border border-red-500/40 bg-red-500/10 p-5 text-red-200">
-            <div className="flex items-start gap-3">
+          <div className="mb-8 rounded-xl border border-red-500/40 bg-red-950/40 p-5 text-red-200 shadow-xl backdrop-blur">
+            <div className="flex items-start gap-3.5">
               <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-400" />
               <div className="flex-1">
-                <h3 className="font-semibold text-red-300">Batch Analysis Failed</h3>
-                <p className="mt-1 text-sm leading-relaxed text-red-200/90">{apiError}</p>
+                <h3 className="font-bold text-red-200">Investigation Engine Rejected Batch</h3>
+                <p className="mt-1 text-sm leading-relaxed text-red-300/90">{apiError}</p>
                 <div className="mt-3 flex gap-3">
                   <button
                     type="button"
                     onClick={handleSubmit}
                     disabled={isAnalyzing}
-                    className="inline-flex items-center gap-1.5 rounded-md bg-red-600/80 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-red-500 cursor-pointer"
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white shadow transition hover:bg-red-500 cursor-pointer"
                   >
                     <RotateCcw className="h-3.5 w-3.5" />
-                    Retry Submission
+                    Retry Ingestion
                   </button>
                   <button
                     type="button"
@@ -260,28 +402,27 @@ export default function BatchUpload() {
           </div>
         )}
 
-        {/* Validation warning */}
         {validationError && (
-          <div className="mb-8 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-amber-200">
+          <div className="mb-8 rounded-xl border border-amber-500/40 bg-amber-950/40 p-4 text-amber-200 shadow-xl backdrop-blur">
             <div className="flex items-center gap-3">
               <AlertCircle className="h-5 w-5 shrink-0 text-amber-400" />
-              <p className="text-sm">{validationError}</p>
+              <p className="text-sm font-medium">{validationError}</p>
             </div>
           </div>
         )}
 
-        {/* Success / Result View */}
+        {/* ── SUCCESS RESULT VIEW ────────────────────────────────────────────── */}
         {result ? (
           <section className="space-y-8">
-            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-6">
+            <div className="rounded-xl border border-emerald-500/40 bg-gradient-to-r from-emerald-950/40 to-slate-900/60 p-6 shadow-xl backdrop-blur">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="rounded-full bg-emerald-500/20 p-2 text-emerald-400">
-                    <CheckCircle2 className="h-6 w-6" />
+                <div className="flex items-center gap-3.5">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                    <CheckCircle2 className="h-7 w-7" />
                   </div>
                   <div>
-                    <h2 className="text-xl font-bold text-white">Batch Analysis Complete</h2>
-                    <p className="text-sm text-emerald-200/80">
+                    <h2 className="text-xl font-extrabold text-white">Batch Analysis Complete</h2>
+                    <p className="text-sm text-emerald-300/80">
                       Successfully ingested and processed investigation batch scans into PostgreSQL.
                     </p>
                   </div>
@@ -291,7 +432,7 @@ export default function BatchUpload() {
                   <button
                     type="button"
                     onClick={handleReset}
-                    className="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-medium text-slate-200 transition hover:bg-slate-700 hover:text-white cursor-pointer"
+                    className="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-700 hover:text-white cursor-pointer"
                   >
                     <FolderUp className="h-4 w-4" />
                     Upload Another Batch
@@ -299,9 +440,9 @@ export default function BatchUpload() {
                   <button
                     type="button"
                     onClick={() => navigate('/')}
-                    className="inline-flex items-center gap-2 rounded-lg bg-cyan-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-cyan-950/50 transition hover:bg-cyan-500 cursor-pointer"
+                    className="inline-flex items-center gap-2 rounded-lg bg-cyan-600 px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-cyan-950/50 transition hover:bg-cyan-500 cursor-pointer"
                   >
-                    View Dashboard
+                    View Main Dashboard
                     <ChevronRight className="h-4 w-4" />
                   </button>
                 </div>
@@ -310,77 +451,91 @@ export default function BatchUpload() {
 
             {/* Metrics cards */}
             <div className="grid gap-4 sm:grid-cols-3">
-              <div className="rounded-xl border border-slate-800 bg-slate-900 p-5">
-                <p className="text-sm font-medium text-slate-400">Total Scans Ingested</p>
-                <p className="mt-2 text-3xl font-bold text-white">{result.total_scans}</p>
+              <div className="rounded-xl border border-slate-800 bg-[#0f172a]/90 p-5 shadow-lg">
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  Total Scans Ingested
+                </p>
+                <p className="mt-2 text-3xl font-extrabold text-white">{result.total_scans}</p>
+                <p className="mt-1 text-xs text-slate-500">Persisted in database</p>
               </div>
 
-              <div className="rounded-xl border border-slate-800 bg-slate-900 p-5">
-                <p className="text-sm font-medium text-slate-400">Successful Scans</p>
-                <p className="mt-2 text-3xl font-bold text-emerald-400">
+              <div className="rounded-xl border border-slate-800 bg-[#0f172a]/90 p-5 shadow-lg">
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  Successful Scans
+                </p>
+                <p className="mt-2 text-3xl font-extrabold text-emerald-400">
                   {result.successful_scans}
                 </p>
+                <p className="mt-1 text-xs text-emerald-500/80">Zero processing errors</p>
               </div>
 
-              <div className="rounded-xl border border-slate-800 bg-slate-900 p-5">
-                <p className="text-sm font-medium text-slate-400">Total Detections Found</p>
-                <p className="mt-2 text-3xl font-bold text-cyan-400">
+              <div className="rounded-xl border border-slate-800 bg-[#0f172a]/90 p-5 shadow-lg">
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  Total Anomalies Found
+                </p>
+                <p className="mt-2 text-3xl font-extrabold text-cyan-400">
                   {result.total_detections}
                 </p>
+                <p className="mt-1 text-xs text-cyan-500/80">Classified by YOLO</p>
               </div>
             </div>
 
             {/* Per-scan result table */}
-            <div className="rounded-xl border border-slate-800 bg-slate-900 overflow-hidden">
-              <div className="border-b border-slate-800 p-5 flex items-center justify-between">
+            <div className="rounded-xl border border-slate-800 bg-[#0f172a]/90 shadow-xl overflow-hidden backdrop-blur-sm">
+              <div className="border-b border-slate-800/80 bg-slate-900/60 p-5 flex items-center justify-between">
                 <div>
-                  <h3 className="font-semibold text-white">Batch Scans Summary</h3>
+                  <h3 className="font-semibold text-white">Batch Scans Ingestion Register</h3>
                   <p className="text-xs text-slate-400">
-                    Individual scan identities, detection counts, and georeference status.
+                    Individual scan identities, coordinates, and AI detection counts.
                   </p>
                 </div>
-                <span className="rounded-md bg-slate-800 px-2.5 py-1 text-xs font-medium text-slate-300">
-                  {result.scans.length} Scans
+                <span className="rounded-md border border-slate-700 bg-slate-800 px-2.5 py-1 text-xs font-mono font-medium text-slate-300">
+                  {result.scans.length} Scans Ingested
                 </span>
               </div>
 
-              <div className="divide-y divide-slate-800">
+              <div className="divide-y divide-slate-800/60">
                 {result.scans.map((scan) => (
                   <div
                     key={scan.id}
                     className="flex flex-col gap-3 p-4 transition-colors hover:bg-slate-800/40 sm:flex-row sm:items-center sm:justify-between"
                   >
                     <div className="flex items-center gap-3">
-                      <div className="rounded-lg bg-slate-800 p-2.5 text-cyan-400">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-700 bg-slate-800 text-cyan-400">
                         <ImageIcon className="h-5 w-5" />
                       </div>
                       <div>
-                        <p className="font-medium text-white">{scan.scan_identity}</p>
-                        <p className="text-xs text-slate-400">
+                        <p className="font-mono text-sm font-bold text-white">
+                          {scan.scan_identity}
+                        </p>
+                        <p className="text-xs text-slate-400 font-mono">
                           {new Date(scan.timestamp).toLocaleString()} • Lat:{' '}
-                          {scan.sonar_latitude.toFixed(5)}, Lon:{' '}
-                          {scan.sonar_longitude.toFixed(5)}
+                          {scan.sonar_latitude.toFixed(5)}, Lon: {scan.sonar_longitude.toFixed(5)}
                         </p>
                       </div>
                     </div>
 
                     <div className="flex items-center gap-4 text-sm">
                       <div className="text-right">
-                        <span className="text-xs text-slate-500">Detections</span>
-                        <p className="font-semibold text-white">
+                        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                          Detections
+                        </span>
+                        <p className="font-bold">
                           {scan.detection_count === 0 ? (
-                            <span className="text-slate-400">0 (Zero detection)</span>
+                            <span className="text-slate-500 text-xs">Clear (0)</span>
                           ) : (
-                            <span className="text-cyan-400">{scan.detection_count}</span>
+                            <span className="text-amber-400 text-xs font-mono">
+                              {scan.detection_count} Anomaly
+                            </span>
                           )}
                         </p>
                       </div>
 
                       <Link
                         to={`/scans/${scan.id}`}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/80 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-700 hover:text-white"
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:border-cyan-500/50 hover:bg-cyan-600 hover:text-white"
                       >
-                        Scan Detail
+                        <span>Scan Detail</span>
                         <ExternalLink className="h-3 w-3" />
                       </Link>
                     </div>
@@ -390,23 +545,37 @@ export default function BatchUpload() {
             </div>
           </section>
         ) : (
-          /* Upload & Configuration Form */
+          /* ── UPLOAD & CONFIGURATION FORM ───────────────────────────────────── */
           <form onSubmit={handleSubmit} className="space-y-8">
-            <div className="grid gap-6 lg:grid-cols-2">
-              {/* Card 1: Sonar Images */}
-              <div className="flex flex-col rounded-xl border border-slate-800 bg-slate-900 p-6">
-                <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-                  <div className="flex items-center gap-2.5">
-                    <div className="rounded-lg bg-cyan-950 p-2 text-cyan-400">
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+              {/* ── CARD 1: SONAR SCAN IMAGES ─────────────────────────────────── */}
+              <div className="flex flex-col rounded-xl border border-slate-800 bg-[#0f172a]/90 shadow-xl backdrop-blur-sm p-6">
+                {/* Step 1 Header */}
+                <div className="flex items-center justify-between border-b border-slate-800/80 pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-cyan-500/30 bg-cyan-500/10 text-cyan-400">
                       <ImageIcon className="h-5 w-5" />
                     </div>
                     <div>
-                      <h2 className="font-semibold text-white">1. Sonar Images</h2>
-                      <p className="text-xs text-slate-400">Accepted: .jpg, .jpeg, .png</p>
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-base font-bold text-white">1. Sonar Images</h2>
+                        <span className="rounded bg-cyan-500/10 border border-cyan-500/20 px-1.5 py-0.5 text-[9px] font-mono font-bold text-cyan-400 uppercase">
+                          .jpg / .png
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-400">
+                        Side-scan raw acoustic images matching navigation.csv
+                      </p>
                     </div>
                   </div>
-                  <span className="rounded-full bg-slate-800 px-2.5 py-0.5 text-xs font-medium text-slate-300">
-                    {images.length} selected
+                  <span
+                    className={`rounded-full px-2.5 py-1 text-xs font-mono font-bold ${
+                      images.length > 0
+                        ? 'bg-cyan-500/15 border border-cyan-500/30 text-cyan-300'
+                        : 'bg-slate-800 text-slate-500'
+                    }`}
+                  >
+                    {images.length} Selected
                   </span>
                 </div>
 
@@ -428,18 +597,21 @@ export default function BatchUpload() {
                       handleAddImages(e.dataTransfer.files)
                     }
                   }}
-                  className={`mt-4 flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-6 text-center transition ${
+                  className={`mt-4 flex flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 text-center transition-all ${
                     isDraggingImages
-                      ? 'border-cyan-500 bg-cyan-950/20'
-                      : 'border-slate-800 bg-slate-950/40 hover:border-slate-700'
+                      ? 'border-cyan-400 bg-cyan-950/30 scale-[1.01]'
+                      : 'border-slate-800 bg-slate-950/50 hover:border-slate-700 hover:bg-slate-950/80'
                   }`}
                 >
-                  <UploadCloud className="h-9 w-9 text-slate-400" />
-                  <p className="mt-2 text-sm font-medium text-slate-300">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full border border-cyan-500/20 bg-cyan-500/10 text-cyan-400 shadow-inner">
+                    <UploadCloud className="h-6 w-6" />
+                  </div>
+                  <p className="mt-3 text-sm font-bold text-slate-200">
                     Drag and drop sonar scan images here
                   </p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Select multiple files corresponding to rows in navigation.csv
+                  <p className="mt-1 max-w-sm text-xs text-slate-400">
+                    Select multiple files corresponding to the rows in navigation.csv. Accepts .jpg,
+                    .jpeg, and .png.
                   </p>
 
                   <input
@@ -456,21 +628,22 @@ export default function BatchUpload() {
                   />
                   <label
                     htmlFor="sonar-images-input"
-                    className="mt-4 inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-xs font-semibold text-slate-200 transition hover:bg-slate-700 hover:text-white"
+                    className="mt-4 inline-flex cursor-pointer items-center gap-2 rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-4 py-2 text-xs font-bold text-cyan-300 shadow transition hover:bg-cyan-500/20 hover:border-cyan-400"
                   >
-                    Browse Images
+                    <FolderUp className="h-4 w-4" />
+                    Browse Image Files
                   </label>
                 </div>
 
                 {/* Selected Images List */}
-                <div className="mt-4 flex-1">
-                  <div className="flex items-center justify-between text-xs text-slate-400">
-                    <span>Selected Files</span>
+                <div className="mt-5 flex flex-1 flex-col">
+                  <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-slate-400">
+                    <span>Selected Swathes ({images.length})</span>
                     {images.length > 0 && !isAnalyzing && (
                       <button
                         type="button"
                         onClick={handleClearImages}
-                        className="text-xs text-slate-500 hover:text-red-400 cursor-pointer"
+                        className="text-xs font-normal text-slate-500 hover:text-red-400 cursor-pointer transition-colors"
                       >
                         Clear All
                       </button>
@@ -478,27 +651,34 @@ export default function BatchUpload() {
                   </div>
 
                   {images.length === 0 ? (
-                    <div className="mt-2 rounded-lg border border-dashed border-slate-800/80 p-6 text-center text-xs text-slate-500">
-                      No scan images selected yet.
+                    <div className="mt-2 flex flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-slate-800/80 p-8 text-center text-xs text-slate-500">
+                      <ImageIcon className="h-8 w-8 text-slate-700 mb-2" />
+                      No scan images staged yet.
                     </div>
                   ) : (
-                    <div className="mt-2 max-h-56 overflow-y-auto space-y-1.5 pr-1">
+                    <div className="mt-2 max-h-60 overflow-y-auto space-y-1.5 pr-1">
                       {images.map((img, idx) => (
                         <div
                           key={`${img.name}-${img.size}-${idx}`}
-                          className="flex items-center justify-between rounded-lg bg-slate-950/60 px-3 py-2 text-xs text-slate-300"
+                          className="flex items-center justify-between rounded-lg border border-slate-800/80 bg-slate-950/70 px-3.5 py-2 text-xs transition hover:border-slate-700"
                         >
-                          <div className="flex items-center gap-2 truncate">
-                            <span className="text-slate-500">#{idx + 1}</span>
-                            <span className="truncate font-medium text-slate-200">{img.name}</span>
-                            <span className="text-slate-500">({formatBytes(img.size)})</span>
+                          <div className="flex items-center gap-2.5 truncate">
+                            <span className="font-mono text-[10px] text-cyan-400">
+                              #{String(idx + 1).padStart(2, '0')}
+                            </span>
+                            <span className="truncate font-mono font-medium text-slate-200">
+                              {img.name}
+                            </span>
+                            <span className="text-[11px] text-slate-500 font-mono">
+                              ({formatBytes(img.size)})
+                            </span>
                           </div>
                           {!isAnalyzing && (
                             <button
                               type="button"
                               onClick={() => handleRemoveImage(idx)}
                               title={`Remove ${img.name}`}
-                              className="text-slate-500 transition hover:text-red-400 cursor-pointer"
+                              className="text-slate-500 transition hover:text-red-400 cursor-pointer p-1"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
@@ -510,26 +690,34 @@ export default function BatchUpload() {
                 </div>
               </div>
 
-              {/* Card 2: navigation.csv */}
-              <div className="flex flex-col rounded-xl border border-slate-800 bg-slate-900 p-6">
-                <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-                  <div className="flex items-center gap-2.5">
-                    <div className="rounded-lg bg-cyan-950 p-2 text-cyan-400">
+              {/* ── CARD 2: NAVIGATION METADATA ───────────────────────────────── */}
+              <div className="flex flex-col rounded-xl border border-slate-800 bg-[#0f172a]/90 shadow-xl backdrop-blur-sm p-6">
+                {/* Step 2 Header */}
+                <div className="flex items-center justify-between border-b border-slate-800/80 pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-emerald-400">
                       <FileSpreadsheet className="h-5 w-5" />
                     </div>
                     <div>
-                      <h2 className="font-semibold text-white">2. Navigation Metadata</h2>
-                      <p className="text-xs text-slate-400">Exactly one navigation.csv</p>
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-base font-bold text-white">2. Navigation Metadata</h2>
+                        <span className="rounded bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 text-[9px] font-mono font-bold text-emerald-400 uppercase">
+                          CSV
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-400">
+                        Platform telemetry file named strictly <code className="text-cyan-300">navigation.csv</code>
+                      </p>
                     </div>
                   </div>
                   <span
-                    className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                      navigationFile
-                        ? 'bg-emerald-500/20 text-emerald-300'
-                        : 'bg-slate-800 text-slate-400'
+                    className={`rounded-full px-2.5 py-1 text-xs font-mono font-bold ${
+                      isCsvValid
+                        ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-300'
+                        : 'bg-amber-500/15 border border-amber-500/30 text-amber-300'
                     }`}
                   >
-                    {navigationFile ? '1 Selected' : 'Required'}
+                    {isCsvValid ? '1 Verified' : 'Required'}
                   </span>
                 </div>
 
@@ -551,18 +739,20 @@ export default function BatchUpload() {
                       handleSetCsv(e.dataTransfer.files)
                     }
                   }}
-                  className={`mt-4 flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-6 text-center transition ${
+                  className={`mt-4 flex flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 text-center transition-all ${
                     isDraggingCsv
-                      ? 'border-cyan-500 bg-cyan-950/20'
-                      : 'border-slate-800 bg-slate-950/40 hover:border-slate-700'
+                      ? 'border-emerald-400 bg-emerald-950/30 scale-[1.01]'
+                      : 'border-slate-800 bg-slate-950/50 hover:border-slate-700 hover:bg-slate-950/80'
                   }`}
                 >
-                  <FileSpreadsheet className="h-9 w-9 text-slate-400" />
-                  <p className="mt-2 text-sm font-medium text-slate-300">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full border border-emerald-500/20 bg-emerald-500/10 text-emerald-400 shadow-inner">
+                    <FileSpreadsheet className="h-6 w-6" />
+                  </div>
+                  <p className="mt-3 text-sm font-bold text-slate-200">
                     Drag and drop navigation.csv here
                   </p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    File must be named navigation.csv
+                  <p className="mt-1 max-w-sm text-xs text-slate-400">
+                    Must contain: filename, timestamp, sonar_lat, sonar_lon, heading, altitude, range.
                   </p>
 
                   <input
@@ -578,107 +768,164 @@ export default function BatchUpload() {
                   />
                   <label
                     htmlFor="navigation-csv-input"
-                    className="mt-4 inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-xs font-semibold text-slate-200 transition hover:bg-slate-700 hover:text-white"
+                    className="mt-4 inline-flex cursor-pointer items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-xs font-bold text-emerald-300 shadow transition hover:bg-emerald-500/20 hover:border-emerald-400"
                   >
+                    <FolderUp className="h-4 w-4" />
                     {navigationFile ? 'Replace navigation.csv' : 'Browse navigation.csv'}
                   </label>
                 </div>
 
                 {/* Selected CSV Display */}
-                <div className="mt-4 flex-1">
-                  <div className="text-xs text-slate-400">Selected Navigation File</div>
+                <div className="mt-5 flex flex-1 flex-col">
+                  <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                    Selected Navigation File
+                  </div>
 
                   {navigationFile ? (
-                    <div className="mt-2 flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950/60 p-3 text-xs text-slate-200">
-                      <div className="flex items-center gap-2.5 truncate">
-                        <FileSpreadsheet className="h-4 w-4 shrink-0 text-cyan-400" />
-                        <span className="font-semibold text-white truncate">
-                          {navigationFile.name}
-                        </span>
-                        <span className="text-slate-400">
-                          ({formatBytes(navigationFile.size)})
-                        </span>
+                    <div
+                      className={`mt-2 flex items-center justify-between rounded-lg border p-3.5 text-xs transition ${
+                        isCsvValid
+                          ? 'border-emerald-500/30 bg-emerald-950/20 text-emerald-200'
+                          : 'border-amber-500/30 bg-amber-950/20 text-amber-200'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 truncate">
+                        <FileSpreadsheet className="h-5 w-5 shrink-0 text-emerald-400" />
+                        <div>
+                          <div className="font-mono font-bold text-white truncate">
+                            {navigationFile.name}
+                          </div>
+                          <div className="text-[11px] text-slate-400 font-mono">
+                            {formatBytes(navigationFile.size)} • Telemetry CSV
+                          </div>
+                        </div>
                       </div>
                       {!isAnalyzing && (
                         <button
                           type="button"
                           onClick={handleRemoveCsv}
                           title="Remove navigation file"
-                          className="text-slate-500 transition hover:text-red-400 cursor-pointer"
+                          className="text-slate-500 transition hover:text-red-400 cursor-pointer p-1"
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
                       )}
                     </div>
                   ) : (
-                    <div className="mt-2 rounded-lg border border-dashed border-slate-800/80 p-6 text-center text-xs text-slate-500">
+                    <div className="mt-2 flex flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-slate-800/80 p-6 text-center text-xs text-slate-500">
+                      <FileSpreadsheet className="h-8 w-8 text-slate-700 mb-2" />
                       No navigation.csv file selected.
                     </div>
                   )}
 
-                  {/* Architecture reference box */}
-                  <div className="mt-4 rounded-lg bg-slate-950/40 p-3 text-xs text-slate-400 border border-slate-800/60">
-                    <p className="font-semibold text-slate-300">Investigation Batch Layout:</p>
-                    <pre className="mt-1 font-mono text-[11px] text-cyan-400">
+                  {/* Architecture Reference Box */}
+                  <div className="mt-4 rounded-lg border border-slate-800/80 bg-slate-950/60 p-3.5 text-xs text-slate-400">
+                    <div className="flex items-center gap-2 font-semibold text-slate-300">
+                      <Compass className="h-4 w-4 text-cyan-400" />
+                      <span>Investigation Batch Structure:</span>
+                    </div>
+                    <pre className="mt-2 font-mono text-[11px] text-cyan-400 bg-slate-950/90 rounded p-2 border border-slate-800/60">
 {`investigation_batch/
-├── scans/ (Multiple .jpg / .png)
-└── navigation.csv (1-to-1 scan mapping)`}
+├── scans/ (Multiple .jpg / .png sonar images)
+└── navigation.csv (1-to-1 scan filename mapping)`}
                     </pre>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Submission Actions */}
-            <div className="rounded-xl border border-slate-800 bg-slate-900 p-6">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            {/* ── STEP 3: MISSION READINESS & SUBMISSION ACTION ───────────────── */}
+            <div className="rounded-xl border border-slate-800 bg-[#0f172a]/90 p-6 shadow-xl backdrop-blur-sm">
+              <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
                 <div>
-                  <h3 className="font-semibold text-white">Ready to Analyze</h3>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    {images.length > 0 && navigationFile
-                      ? `Batch prepared: ${images.length} scan image${images.length !== 1 ? 's' : ''} + ${navigationFile.name}`
-                      : 'Please select both scan images and navigation.csv to proceed.'}
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold uppercase tracking-widest text-cyan-400">
+                      Step 3 • Execution Trigger
+                    </span>
+                    <span
+                      className={`h-2 w-2 rounded-full ${
+                        isFormReady
+                          ? 'bg-emerald-400 shadow-[0_0_8px_#34d399]'
+                          : 'bg-slate-600'
+                      }`}
+                    />
+                  </div>
+                  <h3 className="mt-1 text-lg font-extrabold text-white">
+                    {isFormReady
+                      ? 'Investigation Batch Ready for Neural Inference'
+                      : 'Awaiting Complete Ingestion Pair'}
+                  </h3>
+                  <p className="mt-1 text-xs text-slate-400 max-w-2xl">
+                    {images.length > 0 && isCsvValid
+                      ? `Batch prepared: ${images.length} sonar scan image${
+                          images.length !== 1 ? 's' : ''
+                        } paired with ${navigationFile?.name}. Deterministic geometry and YOLO object detection will run automatically.`
+                      : 'Please stage at least one sonar image (.jpg, .jpeg, .png) and exactly one navigation.csv to proceed.'}
                   </p>
                 </div>
 
-                <div className="flex items-center gap-3">
+                {/* Primary Analyze CTA Button */}
+                <div className="flex items-center gap-4 shrink-0">
                   <button
                     type="submit"
                     disabled={!isFormReady}
-                    className={`inline-flex items-center justify-center gap-2 rounded-lg px-6 py-3 text-sm font-semibold transition ${
+                    className={`inline-flex items-center justify-center gap-2.5 rounded-xl px-7 py-3.5 text-sm font-extrabold tracking-wide uppercase transition-all duration-200 ${
                       isFormReady
-                        ? 'bg-cyan-600 text-white shadow-lg shadow-cyan-950/50 hover:bg-cyan-500 cursor-pointer'
-                        : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-800'
+                        ? 'bg-gradient-to-r from-cyan-600 via-cyan-500 to-emerald-500 text-white shadow-[0_0_25px_rgba(6,182,212,0.35)] hover:shadow-[0_0_35px_rgba(6,182,212,0.5)] hover:scale-[1.02] cursor-pointer'
+                        : 'bg-slate-800 text-slate-500 border border-slate-800 cursor-not-allowed'
                     }`}
                   >
                     {isAnalyzing ? (
                       <>
-                        <Loader2 className="h-4 w-4 animate-spin text-cyan-300" />
-                        <span>Analyzing batch...</span>
+                        <Loader2 className="h-5 w-5 animate-spin text-white" />
+                        <span>Analyzing Batch Telemetry...</span>
                       </>
                     ) : (
                       <>
-                        <Layers className="h-4 w-4" />
-                        <span>Analyze Batch</span>
+                        <Layers className="h-5 w-5" />
+                        <span>Analyze Investigation Batch</span>
+                        <ArrowRight className="h-4 w-4" />
                       </>
                     )}
                   </button>
                 </div>
               </div>
 
-              {/* In-progress helper note */}
+              {/* In-Progress Pipeline Animation Note */}
               {isAnalyzing && (
-                <div className="mt-4 flex items-center gap-3 rounded-lg border border-cyan-500/20 bg-cyan-950/30 p-3 text-xs text-cyan-300">
-                  <Loader2 className="h-4 w-4 animate-spin shrink-0 text-cyan-400" />
-                  <span>
-                    Executing investigation batch analysis: uploading files, performing YOLO object detection, georeferencing coordinates, and persisting records into PostgreSQL...
-                  </span>
+                <div className="mt-6 rounded-lg border border-cyan-500/30 bg-cyan-950/30 p-4 text-xs text-cyan-200">
+                  <div className="flex items-center gap-3">
+                    <Loader2 className="h-5 w-5 animate-spin text-cyan-400 shrink-0" />
+                    <div>
+                      <div className="font-bold text-white">
+                        Executing High-Resolution Sonar Inference Pipeline...
+                      </div>
+                      <div className="text-[11px] text-cyan-300/80 mt-0.5">
+                        Transmitting multipart scans → validating navigation.csv → running YOLO
+                        model → computing slant-range georeference → storing persistent database
+                        records.
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
           </form>
         )}
-      </div>
-    </main>
+
+        {/* ── FOOTER ────────────────────────────────────────────────────────── */}
+        <footer className="mt-10 flex flex-col items-center justify-between gap-4 border-t border-slate-800/80 pt-6 text-xs text-slate-500 sm:flex-row">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-slate-400">DRISHTI SSS</span>
+            <span>•</span>
+            <span>Naval Debris Intelligence &amp; Autonomous Sonar Georeferencing</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399]" />
+            <span className="font-mono text-emerald-400">BATCH ENGINE ACTIVE</span>
+          </div>
+        </footer>
+      </main>
+    </div>
   )
 }
