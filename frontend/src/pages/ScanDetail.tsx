@@ -1,7 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import 'leaflet/dist/leaflet.css'
+import L from 'leaflet'
+import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet'
 import { getScan } from '../services/api'
 import type { DetectionResult, ScanResult } from '../types/api'
+
+// Fix Leaflet's default marker icon path broken by bundlers
+delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+})
 
 const API_BASE_URL = 'http://127.0.0.1:8000/api'
 
@@ -206,6 +217,95 @@ function SonarImageViewer({ scanId, detections }: ImageViewerProps) {
   )
 }
 
+// ── Georeferenced Detection Map ─────────────────────────────────────────────
+
+interface DetectionMapProps {
+  detections: DetectionResult[]
+}
+
+/**
+ * Fits the map to the bounding box of all plotted markers.
+ * Must be a child of <MapContainer> to access the map instance via useMap().
+ */
+function FitBounds({ positions }: { positions: [number, number][] }) {
+  const map = useMap()
+  useEffect(() => {
+    if (positions.length === 0) return
+    if (positions.length === 1) {
+      map.setView(positions[0], 14)
+    } else {
+      map.fitBounds(L.latLngBounds(positions), { padding: [40, 40] })
+    }
+  }, [map, positions])
+  return null
+}
+
+function DetectionMap({ detections }: DetectionMapProps) {
+  // Only plot detections that have valid georeferenced coordinates
+  const mapped = detections.filter(
+    (d): d is DetectionResult & { target_latitude: number; target_longitude: number } =>
+      d.target_latitude !== null && d.target_longitude !== null,
+  )
+
+  const positions: [number, number][] = mapped.map((d) => [d.target_latitude, d.target_longitude])
+
+  // Fallback centre — used only when there are no mapped detections
+  const defaultCenter: [number, number] = [0, 0]
+
+  return (
+    <section className="mt-8 rounded-xl border border-slate-800 bg-slate-900 overflow-hidden">
+      <div className="border-b border-slate-800 p-5 flex items-center justify-between">
+        <h2 className="text-lg font-semibold">Georeferenced Detection Map</h2>
+        <span className="text-xs text-slate-500">
+          {mapped.length} / {detections.length} detection{detections.length !== 1 ? 's' : ''} mapped
+        </span>
+      </div>
+
+      {mapped.length === 0 ? (
+        <div className="p-8 text-center text-slate-400 text-sm">
+          {detections.length === 0
+            ? 'No detections in this scan — no positions to display.'
+            : 'No detections have georeferenced coordinates available.'}
+        </div>
+      ) : (
+        <MapContainer
+          center={defaultCenter}
+          zoom={14}
+          style={{ height: '420px', width: '100%' }}
+          scrollWheelZoom
+        >
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          />
+          <FitBounds positions={positions} />
+          {mapped.map((det, idx) => (
+            <Marker key={det.id ?? idx} position={[det.target_latitude, det.target_longitude]}>
+              <Popup>
+                <div style={{ minWidth: '180px', fontSize: '13px', lineHeight: 1.6 }}>
+                  <strong>Detection {idx + 1}</strong>
+                  <br />
+                  <span style={{ color: '#0e7490' }}>{det.class_name}</span>
+                  <br />
+                  Confidence: <strong>{(det.confidence * 100).toFixed(1)}%</strong>
+                  <br />
+                  Lat: <strong>{det.target_latitude.toFixed(6)}</strong>
+                  <br />
+                  Lon: <strong>{det.target_longitude.toFixed(6)}</strong>
+                  <br />
+                  Range: <strong>{det.range_m != null ? `${det.range_m.toFixed(1)} m` : '—'}</strong>
+                  <br />
+                  Ground range: <strong>{det.ground_range_m != null ? `${det.ground_range_m.toFixed(1)} m` : '—'}</strong>
+                </div>
+              </Popup>
+            </Marker>
+          ))}
+        </MapContainer>
+      )}
+    </section>
+  )
+}
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 function ScanDetail() {
@@ -276,6 +376,9 @@ function ScanDetail() {
 
         {/* ── Sonar image viewer ── */}
         <SonarImageViewer scanId={scan.id} detections={scan.detections} />
+
+        {/* ── Georeferenced detection map ── */}
+        <DetectionMap detections={scan.detections} />
 
         {/* ── Metadata cards ── */}
         <section className="mt-8 grid gap-4 md:grid-cols-2">
