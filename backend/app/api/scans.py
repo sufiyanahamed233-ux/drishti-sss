@@ -6,7 +6,10 @@ API endpoints for listing and retrieving persisted sonar scans and detections.
 
 from __future__ import annotations
 
+import os
+
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.db.models import Scan as DB_Scan
@@ -49,3 +52,40 @@ def get_scan(scan_id: int, db: Session = Depends(get_db)) -> ScanResult:
             detail=f"Scan with ID {scan_id} not found",
         )
     return ScanResult.model_validate(scan)
+
+
+@router.get(
+    "/{scan_id}/image",
+    summary="Get original sonar image for a scan",
+    response_description="The original sonar image file",
+    responses={
+        200: {"content": {"image/*": {}}},
+        404: {"description": "Scan or image file not found"},
+    },
+)
+def get_scan_image(scan_id: int, db: Session = Depends(get_db)) -> FileResponse:
+    """
+    Return the original sonar image stored for a given scan.
+
+    The image path is read exclusively from the database record for this scan —
+    the client never supplies a filesystem path.
+    """
+    scan = db.query(DB_Scan).filter(DB_Scan.id == scan_id).first()
+    if scan is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Scan with ID {scan_id} not found",
+        )
+
+    image_path: str = scan.image_path
+    if not os.path.isfile(image_path):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Image file not found on disk: {image_path}",
+        )
+
+    return FileResponse(
+        path=image_path,
+        media_type="image/*",
+        filename=os.path.basename(image_path),
+    )
