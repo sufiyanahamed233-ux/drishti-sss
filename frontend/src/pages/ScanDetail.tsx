@@ -120,6 +120,154 @@ interface ImageViewerProps {
   detections: DetectionResult[]
 }
 
+interface LabelLayout {
+  placeBelow: boolean
+  anchorRight: boolean
+  offsetY: number
+}
+
+interface PlacedLabelRect {
+  lx1: number
+  lx2: number
+  ly1: number
+  ly2: number
+}
+
+function computeLabelLayouts(
+  detections: DetectionResult[],
+  naturalSize: { w: number; h: number }
+): LabelLayout[] {
+  const { w: nw, h: nh } = naturalSize
+  const placed: PlacedLabelRect[] = []
+  const layouts: LabelLayout[] = []
+
+  // Normalized label height (~20-22px in typical display)
+  const LABEL_H = 0.055
+
+  for (let i = 0; i < detections.length; i++) {
+    const det = detections[i]
+    if (!det.bbox || nw <= 0 || nh <= 0) {
+      layouts.push({ placeBelow: false, anchorRight: false, offsetY: 0 })
+      continue
+    }
+
+    const bx1 = det.bbox.x1 / nw
+    const by1 = det.bbox.y1 / nh
+    const bx2 = det.bbox.x2 / nw
+    const by2 = det.bbox.y2 / nh
+
+    // Estimate label width in normalized coordinates
+    const labelText = `#${i + 1} ${det.class_name} ${(det.confidence * 100).toFixed(0)}%`
+    const approxPxWidth = Math.max(85, labelText.length * 6.5 + 16)
+    const labelW = Math.min(0.45, Math.max(0.16, approxPxWidth / Math.min(nw, 800)))
+
+    const spaceAbove = by1
+    const spaceBelow = 1 - by2
+
+    // Helper to compute normalized bounding box of candidate label
+    const getRect = (placeBelow: boolean, anchorRight: boolean, offsetYPx: number): PlacedLabelRect => {
+      const vOffsetNorm = offsetYPx / 400
+      let lx1: number
+      let lx2: number
+      if (anchorRight) {
+        lx2 = bx2
+        lx1 = Math.max(0, bx2 - labelW)
+      } else {
+        lx1 = bx1
+        lx2 = Math.min(1, bx1 + labelW)
+      }
+
+      let ly1: number
+      let ly2: number
+      if (placeBelow) {
+        ly1 = by2 + vOffsetNorm
+        ly2 = ly1 + LABEL_H
+      } else {
+        ly2 = by1 - vOffsetNorm
+        ly1 = ly2 - LABEL_H
+      }
+      return { lx1, lx2, ly1, ly2 }
+    }
+
+    // Helper to check if candidate collides with any already-placed label
+    const collidesWithPlaced = (r: PlacedLabelRect): boolean => {
+      const PAD_X = 0.015
+      const PAD_Y = 0.01
+      for (const p of placed) {
+        const overlapX = !(r.lx2 + PAD_X <= p.lx1 || r.lx1 >= p.lx2 + PAD_X)
+        const overlapY = !(r.ly2 + PAD_Y <= p.ly1 || r.ly1 >= p.ly2 + PAD_Y)
+        if (overlapX && overlapY) return true
+      }
+      return false
+    }
+
+    // Preferred default:
+    // Prefer ABOVE immediately; if space above is tight (< 0.07) and space below exists, place BELOW.
+    const defaultPlaceBelow = spaceAbove < 0.07 && spaceBelow >= 0.05
+    // Anchor right if box starts on right 35% of image or right edge > 85%, preventing overflow
+    const defaultAnchorRight = bx1 > 0.65 || bx2 > 0.85
+
+    type Candidate = { placeBelow: boolean; anchorRight: boolean; offsetY: number }
+    const candidates: Candidate[] = [
+      // 1. Preferred default (above if room, else below)
+      { placeBelow: defaultPlaceBelow, anchorRight: defaultAnchorRight, offsetY: 0 },
+      // 2. Flip below / above
+      { placeBelow: !defaultPlaceBelow, anchorRight: defaultAnchorRight, offsetY: 0 },
+      // 3. Flip horizontal anchor
+      { placeBelow: defaultPlaceBelow, anchorRight: !defaultAnchorRight, offsetY: 0 },
+      { placeBelow: !defaultPlaceBelow, anchorRight: !defaultAnchorRight, offsetY: 0 },
+      // 4. Stagger with vertical offset (20px)
+      { placeBelow: false, anchorRight: defaultAnchorRight, offsetY: 20 },
+      { placeBelow: true, anchorRight: defaultAnchorRight, offsetY: 20 },
+      { placeBelow: false, anchorRight: !defaultAnchorRight, offsetY: 20 },
+      { placeBelow: true, anchorRight: !defaultAnchorRight, offsetY: 20 },
+      // 5. Stagger with second vertical offset (40px)
+      { placeBelow: false, anchorRight: defaultAnchorRight, offsetY: 40 },
+      { placeBelow: true, anchorRight: defaultAnchorRight, offsetY: 40 },
+    ]
+
+    let bestChoice: Candidate | null = null
+    let chosenRect: PlacedLabelRect | null = null
+
+    for (const cand of candidates) {
+      // If candidate is placed above, ensure there is space above inside the image
+      if (!cand.placeBelow && spaceAbove < (cand.offsetY > 0 ? 0.11 : 0.06)) continue
+      // If candidate is placed below, ensure there is space below inside the image
+      if (cand.placeBelow && spaceBelow < (cand.offsetY > 0 ? 0.11 : 0.06)) continue
+
+      // If anchor right, ensure box right edge allows label to fit within left boundary
+      if (cand.anchorRight && bx2 < labelW) continue
+      // If anchor left, ensure box left edge allows label to fit within right boundary
+      if (!cand.anchorRight && bx1 + labelW > 1.0) continue
+
+      const rect = getRect(cand.placeBelow, cand.anchorRight, cand.offsetY)
+
+      // Ensure rectangle stays strictly within [0, 1] bounds
+      if (rect.ly1 < -0.01 || rect.ly2 > 1.01) continue
+
+      if (!collidesWithPlaced(rect)) {
+        bestChoice = cand
+        chosenRect = rect
+        break
+      }
+    }
+
+    if (!bestChoice || !chosenRect) {
+      bestChoice = {
+        placeBelow: defaultPlaceBelow,
+        anchorRight: defaultAnchorRight,
+        offsetY: 0,
+      }
+      chosenRect = getRect(bestChoice.placeBelow, bestChoice.anchorRight, bestChoice.offsetY)
+    }
+
+    placed.push(chosenRect)
+    layouts.push(bestChoice)
+  }
+
+  return layouts
+}
+
 function SonarImageViewer({ scanId, detections }: ImageViewerProps) {
   const imgRef = useRef<HTMLImageElement>(null)
   const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(null)
@@ -153,6 +301,11 @@ function SonarImageViewer({ scanId, detections }: ImageViewerProps) {
       height: `${((bbox.y2 - bbox.y1) / h) * 100}%`,
     }
   }
+
+  const labelLayouts = useMemo(() => {
+    if (!naturalSize) return []
+    return computeLabelLayouts(detections, naturalSize)
+  }, [detections, naturalSize])
 
   return (
     <div className="flex flex-col rounded-xl border border-slate-800 bg-[#0f172a]/90 shadow-xl overflow-hidden backdrop-blur-sm">
@@ -239,12 +392,40 @@ function SonarImageViewer({ scanId, detections }: ImageViewerProps) {
                   width: '100%',
                   height: '100%',
                   pointerEvents: 'none',
+                  overflow: 'visible',
                 }}
               >
                 {detections.map((det, idx) => {
                   const pos = toPercent(det.bbox)
                   if (!pos) return null
                   const colour = boxColour(idx)
+                  const layout = labelLayouts[idx] ?? {
+                    placeBelow: false,
+                    anchorRight: false,
+                    offsetY: 0,
+                  }
+
+                  const labelStyle: React.CSSProperties = {
+                    position: 'absolute',
+                    ...(layout.placeBelow
+                      ? { top: '100%', marginTop: `${2 + layout.offsetY}px` }
+                      : { bottom: '100%', marginBottom: `${2 + layout.offsetY}px` }),
+                    ...(layout.anchorRight ? { right: 0 } : { left: 0 }),
+                    backgroundColor: colour,
+                    color: '#0f172a',
+                    fontSize: '10px',
+                    fontWeight: 800,
+                    lineHeight: 1.2,
+                    padding: '2px 5px',
+                    borderRadius: '2px',
+                    whiteSpace: 'nowrap',
+                    boxShadow: '0 2px 6px rgba(0,0,0,0.55)',
+                    maxWidth: '45vw',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    zIndex: 10 + idx + (layout.offsetY > 0 ? 5 : 0),
+                  }
+
                   return (
                     <div
                       key={det.id ?? idx}
@@ -257,25 +438,10 @@ function SonarImageViewer({ scanId, detections }: ImageViewerProps) {
                         border: `2px solid ${colour}`,
                         boxShadow: `0 0 10px ${colour}40`,
                         boxSizing: 'border-box',
+                        overflow: 'visible',
                       }}
                     >
-                      {/* Label pinned inside the top-left corner */}
-                      <span
-                        style={{
-                          position: 'absolute',
-                          left: 0,
-                          top: 0,
-                          backgroundColor: colour,
-                          color: '#0f172a',
-                          fontSize: '10px',
-                          fontWeight: 800,
-                          lineHeight: 1.2,
-                          padding: '2px 5px',
-                          borderRadius: '2px',
-                          whiteSpace: 'nowrap',
-                          boxShadow: '0 2px 4px rgba(0,0,0,0.4)',
-                        }}
-                      >
+                      <span style={labelStyle}>
                         #{idx + 1} {det.class_name} {(det.confidence * 100).toFixed(0)}%
                       </span>
                     </div>
@@ -285,6 +451,7 @@ function SonarImageViewer({ scanId, detections }: ImageViewerProps) {
             )}
           </div>
         )}
+
 
         {/* Legend */}
         {!imgError && !imgLoading && detections.length > 0 && (
