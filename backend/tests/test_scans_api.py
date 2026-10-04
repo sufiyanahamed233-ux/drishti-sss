@@ -13,6 +13,7 @@ isolated via FastAPI app.dependency_overrides.
 from __future__ import annotations
 
 from collections.abc import Generator
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -20,10 +21,10 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from app.api.analysis import get_detector
-from sqlalchemy.pool import StaticPool
-from app.db.models import Base
+from app.db.models import Base, Scan as DB_Scan
 from app.db.session import get_db
 from app.detection.yolo_detector import Detection, YOLODetector
 from app.main import app
@@ -360,3 +361,67 @@ class TestScansCrudEndpoints:
         ]
         response = await client.post("/api/scans/analyze", json=payload)
         assert response.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# GET /api/scans/{scan_id}/image
+# ---------------------------------------------------------------------------
+
+
+class TestScanImageEndpoint:
+    """Tests for GET /api/scans/{scan_id}/image."""
+
+    @pytest.mark.asyncio
+    async def test_get_scan_image_success(
+        self, client: AsyncClient, mock_db: Session, tmp_path: Path
+    ) -> None:
+        """Fetch image for an existing scan with valid image file on disk."""
+        img_file = tmp_path / "test_sonar_scan.jpg"
+        img_file.write_bytes(b"sample-sonar-image-content-bytes")
+
+        scan = DB_Scan(
+            scan_identity="test-img-scan",
+            image_path=str(img_file),
+            sonar_latitude=13.34,
+            sonar_longitude=77.10,
+            heading=90.0,
+            altitude=10.0,
+            range_type="slant",
+        )
+        mock_db.add(scan)
+        mock_db.commit()
+        mock_db.refresh(scan)
+
+        response = await client.get(f"/api/scans/{scan.id}/image")
+        assert response.status_code == 200
+        assert response.content == b"sample-sonar-image-content-bytes"
+
+    @pytest.mark.asyncio
+    async def test_get_scan_image_not_found(self, client: AsyncClient) -> None:
+        """404 when scan ID does not exist."""
+        response = await client.get("/api/scans/999999/image")
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    async def test_get_scan_image_file_missing_on_disk(
+        self, client: AsyncClient, mock_db: Session
+    ) -> None:
+        """404 when DB record points to non-existent image path."""
+        scan = DB_Scan(
+            scan_identity="missing-file-scan",
+            image_path="/non/existent/path/scan.jpg",
+            sonar_latitude=13.34,
+            sonar_longitude=77.10,
+            heading=90.0,
+            altitude=10.0,
+            range_type="slant",
+        )
+        mock_db.add(scan)
+        mock_db.commit()
+        mock_db.refresh(scan)
+
+        response = await client.get(f"/api/scans/{scan.id}/image")
+        assert response.status_code == 404
+        assert "not found on disk" in response.json()["detail"].lower()
+

@@ -25,8 +25,13 @@ DEBUG
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Root directory of the repository (drishti-sss)
+BASE_DIR: Path = Path(__file__).resolve().parent.parent.parent
 
 
 class Settings(BaseSettings):
@@ -50,6 +55,10 @@ class Settings(BaseSettings):
     app_title: str = "Drishti SSS API"
     app_version: str = "0.3.0"
 
+    # ── Persistent Storage ────────────────────────────────────────────────────
+    data_dir: Path = BASE_DIR / "data"
+    scans_dir: Path = BASE_DIR / "data" / "scans"
+
     @field_validator("app_env")
     @classmethod
     def validate_app_env(cls, v: str) -> str:
@@ -61,3 +70,4 @@ class Settings(BaseSettings):
 
 # Module-level singleton – import this everywhere.
 settings = Settings()
+
