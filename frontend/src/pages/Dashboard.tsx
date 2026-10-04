@@ -1,4 +1,5 @@
-﻿import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { getScans } from '../services/api'
 import type { ScanResult } from '../types/api'
 
@@ -105,9 +106,10 @@ function Dashboard() {
           ) : (
             <div className="divide-y divide-slate-800">
               {scans.map((scan) => (
-                <div
+                <Link
                   key={scan.id}
-                  className="flex flex-col gap-4 p-5 md:flex-row md:items-center md:justify-between"
+                  to={`/scans/${scan.id}`}
+                  className="flex cursor-pointer flex-col gap-4 p-5 transition-colors hover:bg-slate-800/60 md:flex-row md:items-center md:justify-between"
                 >
                   <div>
                     <p className="font-medium">{scan.scan_identity}</p>
@@ -135,7 +137,7 @@ function Dashboard() {
                       </p>
                     </div>
                   </div>
-                </div>
+                </Link>
               ))}
             </div>
           )}
