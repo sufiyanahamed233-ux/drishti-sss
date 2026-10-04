@@ -53,6 +53,17 @@ class RangeType(str, enum.Enum):
     MEDIUM = "medium"    # e.g. 25–75 m
     LONG = "long"        # e.g. 75–150 m
     EXTENDED = "extended"
+    SLANT = "slant"
+    GROUND = "ground"
+
+    @classmethod
+    def _missing_(cls, value: object):
+        if isinstance(value, str):
+            val_lower = value.strip().lower()
+            for member in cls:
+                if member.value == val_lower or member.name.lower() == val_lower:
+                    return member
+        return None
 
 
 class DataSource(str, enum.Enum):
@@ -61,6 +72,15 @@ class DataSource(str, enum.Enum):
     REAL = "real"
     DEMO = "demo"
     SIMULATED = "simulated"
+
+    @classmethod
+    def _missing_(cls, value: object):
+        if isinstance(value, str):
+            val_lower = value.strip().lower()
+            for member in cls:
+                if member.value == val_lower or member.name.lower() == val_lower:
+                    return member
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -81,7 +101,9 @@ class Scan(Base):
     sonar_longitude   : WGS-84 longitude of the sonar at capture time (deg)
     heading           : True-North heading of the platform at capture time (deg)
     altitude          : height of the sonar above seabed / target plane (m)
-    range_type        : sonar range mode (short / medium / long / extended)
+    range_type        : sonar range mode (short / medium / long / extended / slant / ground)
+    range_m           : sonar range observable in metres
+    relative_bearing  : relative bearing observable in degrees
     timestamp         : UTC datetime of the acquisition event
     data_source       : REAL, DEMO, or SIMULATED – provenance flag
     notes             : free-text operator notes (optional)
@@ -89,7 +111,11 @@ class Scan(Base):
 
     __tablename__ = "scans"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+    )
 
     scan_identity: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     image_path: Mapped[str] = mapped_column(Text, nullable=False)
@@ -106,6 +132,8 @@ class Scan(Base):
         nullable=False,
         default=RangeType.MEDIUM,
     )
+    range_m: Mapped[float | None] = mapped_column(Float, nullable=True)
+    relative_bearing: Mapped[float | None] = mapped_column(Float, nullable=True)
     timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -159,7 +187,11 @@ class Detection(Base):
 
     __tablename__ = "detections"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+    )
 
     scan_id: Mapped[int] = mapped_column(
         BigInteger,

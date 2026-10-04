@@ -87,6 +87,10 @@ def create_app() -> FastAPI:
             },
         )
 
+    # ── Mount API routers (Phase 3B) ──────────────────────────────────────────
+    from app.api import api_router
+    app.include_router(api_router)
+
     return app
 
 

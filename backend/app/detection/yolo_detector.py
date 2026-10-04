@@ -18,7 +18,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Sequence, Union
+from typing import Any, Sequence, Union
 
 import numpy as np
 
@@ -112,7 +112,20 @@ class YOLODetector:
         self,
         weights_path: Union[str, Path, None] = None,
         conf_threshold: float = DEFAULT_CONF,
+        model: Any = None,
     ) -> None:
+        # Validate confidence threshold
+        if not (0.0 < conf_threshold <= 1.0):
+            raise ValueError(
+                f"conf_threshold must be in (0, 1], got {conf_threshold}"
+            )
+
+        if model is not None:
+            self._weights_path = Path("mock_model")
+            self._conf_threshold = conf_threshold
+            self._model = model
+            return
+
         # Resolve weights path
         resolved = Path(weights_path) if weights_path is not None else DEFAULT_WEIGHTS
         if not resolved.exists():
@@ -120,14 +133,8 @@ class YOLODetector:
                 f"YOLO weights not found: {resolved}"
             )
 
-        # Validate confidence threshold
-        if not (0.0 < conf_threshold <= 1.0):
-            raise ValueError(
-                f"conf_threshold must be in (0, 1], got {conf_threshold}"
-            )
-
-        self._weights_path: Path = resolved
-        self._conf_threshold: float = conf_threshold
+        self._weights_path = resolved
+        self._conf_threshold = conf_threshold
 
         # Lazy-load the YOLO model (import deferred so the module can be
         # imported without ultralytics installed in test environments that

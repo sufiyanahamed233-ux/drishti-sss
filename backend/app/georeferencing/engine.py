@@ -64,6 +64,7 @@ def georeference(
     sonar_altitude: float,
     target_slant_range: float,
     target_relative_bearing: float,
+    range_type: str = "slant",
 ) -> GeoreferencedTarget:
     """
     Georeference a sonar target detection.
@@ -80,11 +81,15 @@ def georeference(
     sonar_altitude:
         Height of the sonar above the seabed / target plane in metres (> 0).
     target_slant_range:
-        Measured slant range from the sonar to the target in metres (≥ altitude).
+        Measured slant range (or ground range if range_type="ground") from the sonar to the target in metres.
     target_relative_bearing:
         Bearing to the target measured relative to the sonar bow, in decimal
         degrees (clockwise positive).  −180 … +180 or 0 … 360 are both
         accepted.
+    range_type:
+        "slant" (default) or "ground". When "slant", horizontal ground range
+        is computed using Pythagoras. When "ground", target_slant_range is
+        treated directly as ground range.
 
     Returns
     -------
@@ -98,7 +103,7 @@ def georeference(
         If any argument is not a real number.
     ValueError
         If *sonar_lat* is outside [−90, 90], *sonar_lon* outside [−180, 180],
-        *sonar_altitude* ≤ 0, or *target_slant_range* < *sonar_altitude*.
+        *sonar_altitude* ≤ 0, or *target_slant_range* < *sonar_altitude* (for slant range).
     """
     # ------------------------------------------------------------------
     # 1. Type validation
@@ -122,7 +127,12 @@ def georeference(
     # ------------------------------------------------------------------
     # 2. Slant → ground range  (validates altitude & range internally)
     # ------------------------------------------------------------------
-    ground_range = slant_to_ground_range(target_slant_range, sonar_altitude)
+    if str(range_type).strip().lower() == "ground":
+        if target_slant_range < 0:
+            raise ValueError(f"'target_slant_range' must be >= 0 for ground range, got {target_slant_range}")
+        ground_range = float(target_slant_range)
+    else:
+        ground_range = slant_to_ground_range(target_slant_range, sonar_altitude)
 
     # ------------------------------------------------------------------
     # 3. Absolute bearing
