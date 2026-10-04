@@ -922,9 +922,9 @@ function ScanDetail() {
                     const meta = getClassMeta(detection.class_name)
                     const colour = boxColour(index)
                     return (
-                      <div key={detection.id ?? index} className="p-5 flex flex-col gap-4">
+                      <div key={detection.id ?? index} className="px-5 py-6 flex flex-col gap-5">
                         {/* Target Title & Class */}
-                        <div className="flex items-start justify-between">
+                        <div className="flex items-center justify-between gap-3">
                           <div className="flex items-center gap-3">
                             <span
                               className="h-4 w-4 rounded shrink-0 shadow-sm"
@@ -957,7 +957,7 @@ function ScanDetail() {
                         </div>
 
                         {/* SECTION A: AI-DERIVED MODEL SIGNATURE */}
-                        <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3 text-xs">
+                        <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-4 text-xs">
                           <div className="flex items-center gap-1.5 text-cyan-400 font-bold uppercase tracking-wider text-[10px] mb-2">
                             <Cpu className="h-3 w-3" />
                             <span>AI-Derived Object Inferences</span>
@@ -981,7 +981,7 @@ function ScanDetail() {
                         </div>
 
                         {/* SECTION B: GEOMETRY-DERIVED GEOLOCATION */}
-                        <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3 text-xs">
+                        <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-4 text-xs">
                           <div className="flex items-center gap-1.5 text-emerald-400 font-bold uppercase tracking-wider text-[10px] mb-2">
                             <Compass className="h-3 w-3" />
                             <span>Geometry-Derived Deterministic Geolocation</span>
