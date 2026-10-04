@@ -237,7 +237,7 @@ class TestClassNames:
 class TestDetectionDataclass:
     """Unit tests for the Detection value object."""
 
-    def _make_det(self, **kwargs) -> "Detection":
+    def _make_det(self, **kwargs):
         from backend.app.detection.yolo_detector import Detection
         defaults = dict(
             class_id=0, class_name="submarine_pipeline",

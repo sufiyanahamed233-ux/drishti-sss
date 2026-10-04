@@ -1,0 +1,21 @@
+# ── Core API framework ────────────────────────────────────────────────────────
+fastapi>=0.142.0
+uvicorn>=0.54.0
+
+# ── Database ──────────────────────────────────────────────────────────────────
+sqlalchemy>=2.1.0
+psycopg2-binary>=2.9.0      # PostgreSQL driver (binary build, no compiler needed)
+
+# ── Settings / environment ────────────────────────────────────────────────────
+pydantic>=2.9.0
+pydantic-settings>=2.15.0
+python-dotenv>=1.2.0
+
+# ── Testing ───────────────────────────────────────────────────────────────────
+pytest>=9.0.0
+pytest-asyncio>=1.4.0
+httpx>=0.28.0               # ASGI test client for FastAPI
+
+# ── Detection (existing) ──────────────────────────────────────────────────────
+# ultralytics>=8.0.0        # loaded at runtime, not during API/DB tests
+numpy>=2.0.0
