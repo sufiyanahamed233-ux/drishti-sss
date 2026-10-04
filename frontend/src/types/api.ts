@@ -40,6 +40,7 @@ export interface ScanMetadata {
 
 export interface ScanResult {
   id: number
+  batch_id?: string | null
   scan_identity: string
   image_path: string
   sonar_latitude: number
@@ -59,8 +60,20 @@ export interface ScanResult {
 }
 
 export interface BatchAnalysisResult {
+  batch_id?: string
   total_scans: number
   successful_scans: number
   total_detections: number
+  scans: ScanResult[]
+}
+
+export interface InvestigationBatchResult {
+  batch_id: string
+  created_at: string
+  total_scans: number
+  successful_scans: number
+  total_detections: number
+  class_counts: Record<string, number>
+  data_source: string
   scans: ScanResult[]
 }

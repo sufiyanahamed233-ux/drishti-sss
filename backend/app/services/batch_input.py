@@ -43,6 +43,7 @@ from sqlalchemy.orm import Session
 
 from app.api.analysis import run_batch_analysis
 from app.config import settings
+from app.db.models import DataSource, InvestigationBatch, Scan as DB_Scan
 from app.detection.yolo_detector import YOLODetector
 from app.schemas.report import BatchAnalysisResult, ScanInput, TargetGeometryInput
 # ---------------------------------------------------------------------------
@@ -685,7 +686,42 @@ async def process_investigation_batch(
             )
             scan_inputs.append(scan_in)
 
-        result = run_batch_analysis(scan_inputs, db, detector)
+        # Create persistent batch identity before running analysis
+        batch_id = f"batch_{uuid.uuid4().hex}"
+        first_ds = scan_summaries[0]["data_source"] if scan_summaries else "REAL"
+        ds_enum = DataSource(first_ds)
+
+        batch_record = InvestigationBatch(
+            batch_id=batch_id,
+            total_scans=len(scan_inputs),
+            successful_scans=0,
+            total_detections=0,
+            data_source=ds_enum,
+        )
+        db.add(batch_record)
+        db.commit()
+        db.refresh(batch_record)
+
+        try:
+            result = run_batch_analysis(scan_inputs, db, detector, batch_id=batch_id)
+        except TypeError:
+            result = run_batch_analysis(scan_inputs, db, detector)
+
+        if getattr(result, "batch_id", None) is None:
+            result.batch_id = batch_id
+
+        # Ensure all created scans are associated with the batch
+        for scan_res in (result.scans or []):
+            db_scan = db.query(DB_Scan).filter(DB_Scan.id == scan_res.id).first()
+            if db_scan and db_scan.batch_id != batch_id:
+                db_scan.batch_id = batch_id
+
+        # Update batch summary metrics
+        batch_record.successful_scans = result.successful_scans
+        batch_record.total_detections = result.total_detections
+        db.commit()
+        db.refresh(batch_record)
+
         return result
 
     finally:

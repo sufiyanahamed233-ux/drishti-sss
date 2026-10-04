@@ -165,7 +165,11 @@ export default function BatchUpload() {
 
     try {
       const data = await analyzeBatch(images, navigationFile)
-      setResult(data)
+      if (data.batch_id) {
+        navigate(`/batches/${data.batch_id}`)
+      } else {
+        setResult(data)
+      }
     } catch (err) {
       if (err instanceof ApiError) {
         setApiError(err.message)

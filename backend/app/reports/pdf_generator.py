@@ -34,7 +34,7 @@ from reportlab.platypus import (
     TableStyle,
 )
 
-from app.db.models import Scan as DB_Scan
+from app.db.models import InvestigationBatch, Scan as DB_Scan
 
 
 # ---------------------------------------------------------------------------
@@ -674,3 +674,370 @@ def generate_scan_pdf_report(scan: DB_Scan) -> bytes:
     # Build PDF with dynamic header/footer decorator
     doc.build(story, canvasmaker=NumberedCanvas)
     return buffer.getvalue()
+
+
+def generate_batch_pdf_report(batch: InvestigationBatch) -> bytes:
+    """
+    Generate a deterministic, professional PDF investigation report for an entire batch of sonar scans.
+
+    Includes:
+    - Report Header & UNCLASSIFIED status
+    - Investigation Batch Information & Provenance
+    - Rigorous Provenance & Methodology Statement (Deterministic geometry vs AI detection)
+    - Survey Summary & Detection Class Breakdown
+    - Scan Summary Table (including zero-detection scans clearly represented)
+    - Georeferenced Coordinates and Detection Details Table
+    """
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        leftMargin=36,
+        rightMargin=36,
+        topMargin=36,
+        bottomMargin=36,
+    )
+
+    primary_color = colors.HexColor("#0D3B66")
+    secondary_color = colors.HexColor("#006494")
+    accent_color = colors.HexColor("#1B998B")
+    dark_neutral = colors.HexColor("#1A202C")
+
+    styles = getSampleStyleSheet()
+
+    title_style = ParagraphStyle(
+        "BatchTitle",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=18,
+        leading=22,
+        textColor=primary_color,
+    )
+
+    subtitle_style = ParagraphStyle(
+        "BatchSubtitle",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=11,
+        leading=14,
+        textColor=secondary_color,
+    )
+
+    section_heading_style = ParagraphStyle(
+        "BatchSectionHeading",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=11,
+        leading=15,
+        textColor=primary_color,
+        keepWithNext=True,
+    )
+
+    meta_label_style = ParagraphStyle(
+        "BatchMetaLabel",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=8.5,
+        leading=12,
+        textColor=colors.HexColor("#4A5568"),
+    )
+
+    meta_val_style = ParagraphStyle(
+        "BatchMetaVal",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=8.5,
+        leading=12,
+        textColor=dark_neutral,
+    )
+
+    table_header_style = ParagraphStyle(
+        "BatchTableHeader",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=8.5,
+        leading=11,
+        textColor=colors.white,
+    )
+
+    table_cell_style = ParagraphStyle(
+        "BatchTableCell",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=8,
+        leading=11,
+        textColor=dark_neutral,
+    )
+
+    provenance_box_style = ParagraphStyle(
+        "BatchProvenanceBox",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=8,
+        leading=11.5,
+        textColor=colors.HexColor("#2C5282"),
+    )
+
+    story: list[Any] = []
+
+    # 1. Report Header
+    story.append(Paragraph("DRISHTI-SSS", title_style))
+    story.append(Paragraph("Sonar Investigation Report — Multi-Scan Batch", subtitle_style))
+    story.append(Spacer(1, 6))
+
+    gen_time_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    header_meta_data = [
+        [
+            Paragraph("<b>Report Type:</b> BATCH_INVESTIGATION_REPORT", meta_label_style),
+            Paragraph(f"<b>Generated At:</b> {gen_time_str}", meta_label_style),
+            Paragraph("<b>Classification:</b> UNCLASSIFIED", meta_label_style),
+        ]
+    ]
+    t_header_meta = Table(header_meta_data, colWidths=[180, 190, 150])
+    t_header_meta.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#EDF2F7")),
+                ("PADDING", (0, 0), (-1, -1), 5),
+                ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E0")),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ]
+        )
+    )
+    story.append(t_header_meta)
+    story.append(Spacer(1, 10))
+
+    # 2. Provenance Disclosure
+    prov_text = (
+        "<b>OPERATIONAL &amp; SCIENTIFIC PROVENANCE DISCLOSURE:</b><br/>"
+        "• <b>Platform Navigation:</b> Sourced from measured navigation records (GNSS, gyrocompass, altimeter).<br/>"
+        "• <b>Target Detections:</b> AI-derived object classifications and bounding boxes inferred via neural network.<br/>"
+        "• <b>Deterministic Georeferencing:</b> Target geographic coordinates (latitude, longitude) and horizontal ground ranges "
+        "are computed using rigorous mathematical trigonometry projecting platform position, heading, and sensor slant/ground range observables. "
+        "<b>Target coordinates are strictly deterministic geometry-derived calculations and are NOT predicted or estimated by artificial intelligence.</b>"
+    )
+    t_prov = Table([[Paragraph(prov_text, provenance_box_style)]], colWidths=[520])
+    t_prov.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#EBF8FF")),
+                ("BOX", (0, 0), (-1, -1), 1, colors.HexColor("#3182CE")),
+                ("PADDING", (0, 0), (-1, -1), 8),
+            ]
+        )
+    )
+    story.append(t_prov)
+    story.append(Spacer(1, 10))
+
+    # 3. Investigation Batch Overview
+    story.append(Paragraph("1. Investigation Batch Overview", section_heading_style))
+    story.append(Spacer(1, 4))
+
+    ds_str = (
+        batch.data_source.value
+        if hasattr(batch.data_source, "value")
+        else str(batch.data_source)
+    )
+    created_str = (
+        batch.created_at.strftime("%Y-%m-%d %H:%M:%S UTC")
+        if batch.created_at
+        else "N/A"
+    )
+
+    scans = sorted(batch.scans or [], key=lambda s: getattr(s, "id", 0) or 0)
+    total_scans = batch.total_scans
+    successful_scans = len(scans)
+
+    all_detections: list[tuple[Any, Any]] = []
+    class_counts: dict[str, int] = {}
+    for s in scans:
+        for d in (s.detections or []):
+            all_detections.append((s, d))
+            class_counts[d.class_name] = class_counts.get(d.class_name, 0) + 1
+
+    batch_info_data = [
+        [
+            Paragraph("Batch Identifier:", meta_label_style),
+            Paragraph(f"<b>{batch.batch_id}</b>", meta_val_style),
+            Paragraph("Created / Ingested:", meta_label_style),
+            Paragraph(created_str, meta_val_style),
+        ],
+        [
+            Paragraph("Data Source Provenance:", meta_label_style),
+            Paragraph(f"<b>{ds_str}</b>", meta_val_style),
+            Paragraph("Total Scans Ingested:", meta_label_style),
+            Paragraph(str(total_scans), meta_val_style),
+        ],
+        [
+            Paragraph("Successful Scans:", meta_label_style),
+            Paragraph(str(successful_scans), meta_val_style),
+            Paragraph("Total Detections:", meta_label_style),
+            Paragraph(str(len(all_detections)), meta_val_style),
+        ],
+    ]
+    t_batch_info = Table(batch_info_data, colWidths=[140, 120, 130, 130])
+    t_batch_info.setStyle(
+        TableStyle(
+            [
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E0")),
+                ("PADDING", (0, 0), (-1, -1), 4),
+                ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#F7FAFC")),
+                ("BACKGROUND", (2, 0), (2, -1), colors.HexColor("#F7FAFC")),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ]
+        )
+    )
+    story.append(t_batch_info)
+    story.append(Spacer(1, 10))
+
+    # 4. Detection Class Breakdown
+    story.append(Paragraph("2. Detection Class Summary", section_heading_style))
+    story.append(Spacer(1, 4))
+
+    if class_counts:
+        class_table_data = [
+            [
+                Paragraph("Detection Class", table_header_style),
+                Paragraph("Target Count", table_header_style),
+                Paragraph("Percentage", table_header_style),
+            ]
+        ]
+        tot_d = max(len(all_detections), 1)
+        for cname, count in sorted(class_counts.items(), key=lambda x: -x[1]):
+            pct = (count / tot_d) * 100
+            class_table_data.append(
+                [
+                    Paragraph(f"<b>{cname}</b>", table_cell_style),
+                    Paragraph(str(count), table_cell_style),
+                    Paragraph(f"{pct:.1f}%", table_cell_style),
+                ]
+            )
+        t_classes = Table(class_table_data, colWidths=[200, 160, 160])
+        t_classes.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), primary_color),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E0")),
+                    ("PADDING", (0, 0), (-1, -1), 4),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    *(
+                        [
+                            ("BACKGROUND", (0, r), (-1, r), colors.HexColor("#F7FAFC"))
+                            for r in range(2, len(class_table_data), 2)
+                        ]
+                    ),
+                ]
+            )
+        )
+        story.append(t_classes)
+    else:
+        story.append(Paragraph("<i>No targets detected in this batch.</i>", meta_val_style))
+    story.append(Spacer(1, 10))
+
+    # 5. Scan Summary Table (including zero-detection scans)
+    story.append(Paragraph("3. Survey Scans Breakdown", section_heading_style))
+    story.append(Spacer(1, 4))
+
+    scans_table_data = [
+        [
+            Paragraph("Scan Identity", table_header_style),
+            Paragraph("Timestamp", table_header_style),
+            Paragraph("Platform Lat / Lon", table_header_style),
+            Paragraph("Hdg (°)", table_header_style),
+            Paragraph("Alt (m)", table_header_style),
+            Paragraph("Detections", table_header_style),
+        ]
+    ]
+
+    for s in scans:
+        s_ts = s.timestamp.strftime("%Y-%m-%d %H:%M") if s.timestamp else "N/A"
+        det_cnt = len(s.detections or [])
+        pos_str = f"{s.sonar_latitude:.4f}, {s.sonar_longitude:.4f}"
+        det_label = f"<b>{det_cnt}</b>" if det_cnt > 0 else "<font color='#718096'>0 (Zero detections)</font>"
+        scans_table_data.append(
+            [
+                Paragraph(f"<b>{s.scan_identity}</b>", table_cell_style),
+                Paragraph(s_ts, table_cell_style),
+                Paragraph(pos_str, table_cell_style),
+                Paragraph(f"{s.heading:.1f}", table_cell_style),
+                Paragraph(f"{s.altitude:.1f}", table_cell_style),
+                Paragraph(det_label, table_cell_style),
+            ]
+        )
+
+    t_scans = Table(scans_table_data, colWidths=[120, 95, 130, 55, 55, 65], repeatRows=1)
+    t_scans.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), primary_color),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E0")),
+                ("PADDING", (0, 0), (-1, -1), 4),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                *(
+                    [
+                        ("BACKGROUND", (0, r), (-1, r), colors.HexColor("#F7FAFC"))
+                        for r in range(2, len(scans_table_data), 2)
+                    ]
+                ),
+            ]
+        )
+    )
+    story.append(t_scans)
+    story.append(Spacer(1, 10))
+
+    # 6. Georeferenced Detections Table
+    story.append(Paragraph("4. Georeferenced Detections Detail", section_heading_style))
+    story.append(Spacer(1, 4))
+
+    if all_detections:
+        geo_table_data = [
+            [
+                Paragraph("Scan", table_header_style),
+                Paragraph("Class", table_header_style),
+                Paragraph("Conf", table_header_style),
+                Paragraph("Target Latitude", table_header_style),
+                Paragraph("Target Longitude", table_header_style),
+                Paragraph("Range (m)", table_header_style),
+                Paragraph("Ground (m)", table_header_style),
+            ]
+        ]
+        for s, d in all_detections:
+            lat_str = f"{d.target_latitude:.6f}" if d.target_latitude is not None else "N/A"
+            lon_str = f"{d.target_longitude:.6f}" if d.target_longitude is not None else "N/A"
+            slant_str = f"{d.range_m:.1f}" if d.range_m is not None else "N/A"
+            ground_str = f"{d.ground_range_m:.1f}" if d.ground_range_m is not None else "N/A"
+            geo_table_data.append(
+                [
+                    Paragraph(s.scan_identity, table_cell_style),
+                    Paragraph(f"<b>{d.class_name}</b>", table_cell_style),
+                    Paragraph(f"{d.confidence:.2f}", table_cell_style),
+                    Paragraph(lat_str, table_cell_style),
+                    Paragraph(lon_str, table_cell_style),
+                    Paragraph(slant_str, table_cell_style),
+                    Paragraph(ground_str, table_cell_style),
+                ]
+            )
+        t_geo = Table(geo_table_data, colWidths=[90, 85, 45, 95, 95, 55, 55], repeatRows=1)
+        t_geo.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), secondary_color),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E0")),
+                    ("PADDING", (0, 0), (-1, -1), 3.5),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    *(
+                        [
+                            ("BACKGROUND", (0, r), (-1, r), colors.HexColor("#F7FAFC"))
+                            for r in range(2, len(geo_table_data), 2)
+                        ]
+                    ),
+                ]
+            )
+        )
+        story.append(t_geo)
+    else:
+        story.append(Paragraph("<i>No georeferenced detections recorded in this batch.</i>", meta_val_style))
+
+    doc.build(story, canvasmaker=NumberedCanvas)
+    return buffer.getvalue()
+

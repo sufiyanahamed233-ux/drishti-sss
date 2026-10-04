@@ -1,4 +1,4 @@
-import type { BatchAnalysisResult, ScanResult } from '../types/api'
+import type { BatchAnalysisResult, InvestigationBatchResult, ScanResult } from '../types/api'
 
 const API_BASE_URL = 'http://127.0.0.1:8000/api'
 
@@ -93,4 +93,65 @@ export async function analyzeBatch(
   }
 
   return response.json()
+}
+
+export async function getBatch(batchId: string): Promise<InvestigationBatchResult> {
+  const response = await fetch(`${API_BASE_URL}/batches/${batchId}`)
+
+  if (!response.ok) {
+    let errorMessage = `Failed to fetch batch ${batchId}: ${response.status}`
+    try {
+      const errorJson = await response.json()
+      if (typeof errorJson?.detail === 'string') {
+        errorMessage = errorJson.detail
+      }
+    } catch {
+      // ignore
+    }
+    throw new ApiError(response.status, errorMessage)
+  }
+
+  return response.json()
+}
+
+export async function getBatchReportJson(batchId: string): Promise<Record<string, unknown>> {
+  const response = await fetch(`${API_BASE_URL}/batches/${batchId}/report/json`)
+
+  if (!response.ok) {
+    let errorMessage = `Failed to fetch batch JSON report: ${response.status}`
+    try {
+      const errorJson = await response.json()
+      if (typeof errorJson?.detail === 'string') {
+        errorMessage = errorJson.detail
+      }
+    } catch {
+      // ignore
+    }
+    throw new ApiError(response.status, errorMessage)
+  }
+
+  return response.json()
+}
+
+export async function getBatchReportGeoJson(batchId: string): Promise<Record<string, unknown>> {
+  const response = await fetch(`${API_BASE_URL}/batches/${batchId}/report/geojson`)
+
+  if (!response.ok) {
+    let errorMessage = `Failed to fetch batch GeoJSON report: ${response.status}`
+    try {
+      const errorJson = await response.json()
+      if (typeof errorJson?.detail === 'string') {
+        errorMessage = errorJson.detail
+      }
+    } catch {
+      // ignore
+    }
+    throw new ApiError(response.status, errorMessage)
+  }
+
+  return response.json()
+}
+
+export function getBatchReportPdfUrl(batchId: string): string {
+  return `${API_BASE_URL}/batches/${batchId}/report/pdf`
 }

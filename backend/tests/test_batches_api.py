@@ -944,3 +944,284 @@ class TestBatchImagePersistence:
         with pytest.raises(HTTPException) as exc_info:
             persist_batch_scan_image(src_file, "../evil.jpg", storage_dir)
         assert exc_info.value.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Investigation Batch Results and Reports Tests
+# ---------------------------------------------------------------------------
+
+
+class TestInvestigationBatchResultsAndReports:
+    """Test suite verifying batch persistence, GET /api/batches/{batch_id}, and reports."""
+
+    @pytest.mark.asyncio
+    async def test_batch_id_generated_and_assigned_to_all_scans(
+        self, client: AsyncClient, mock_detector: MagicMock
+    ) -> None:
+        """Batch upload generates a batch_id and associates all scans with it."""
+        mock_detector.detect.return_value = []
+        csv_content = (
+            _nav_header()
+            + _nav_row("scan_a.jpg", lat=12.5, lon=75.5)
+            + _nav_row("scan_b.jpg", lat=12.6, lon=75.6)
+        )
+        files = _build_files(
+            csv_content,
+            {"scan_a.jpg": _make_dummy_image(), "scan_b.jpg": _make_dummy_image()},
+        )
+        response = await client.post("/api/batches/analyze", files=files)
+        assert response.status_code == 200
+        data = response.json()
+
+        batch_id = data.get("batch_id")
+        assert batch_id is not None
+        assert batch_id.startswith("batch_")
+        assert len(data["scans"]) == 2
+
+        for scan in data["scans"]:
+            assert scan.get("batch_id") == batch_id
+
+    @pytest.mark.asyncio
+    async def test_get_batch_results_including_zero_detection_scans(
+        self, client: AsyncClient, mock_detector: MagicMock
+    ) -> None:
+        """GET /api/batches/{batch_id} returns all scans, detections, and class statistics."""
+        from app.detection.yolo_detector import Detection as YOLODetection
+
+        def _mock_detect(path: str):
+            if "scan_det" in os.path.basename(path):
+                return [
+                    YOLODetection(
+                        class_id=0,
+                        class_name="pipeline",
+                        confidence=0.92,
+                        x1=10.0,
+                        y1=20.0,
+                        x2=50.0,
+                        y2=60.0,
+                    ),
+                    YOLODetection(
+                        class_id=2,
+                        class_name="debris",
+                        confidence=0.88,
+                        x1=70.0,
+                        y1=80.0,
+                        x2=110.0,
+                        y2=120.0,
+                    ),
+                ]
+            return []
+
+        mock_detector.detect.side_effect = _mock_detect
+
+        # 2 scans: scan_det has 2 detections, scan_zero has 0 detections
+        csv_content = (
+            _nav_header()
+            + _nav_row(
+                "scan_det.jpg",
+                lat=13.0,
+                lon=80.0,
+                det_idx="0",
+                range_m="30.0",
+                range_type="SLANT",
+                bearing="45.0",
+            )
+            + _nav_row(
+                "scan_det.jpg",
+                lat=13.0,
+                lon=80.0,
+                det_idx="1",
+                range_m="40.0",
+                range_type="GROUND",
+                bearing="90.0",
+            )
+            + _nav_row("scan_zero.jpg", lat=13.1, lon=80.1)
+        )
+        files = _build_files(
+            csv_content,
+            {"scan_det.jpg": _make_dummy_image(), "scan_zero.jpg": _make_dummy_image()},
+        )
+        upload_res = await client.post("/api/batches/analyze", files=files)
+        assert upload_res.status_code == 200, upload_res.json()
+        batch_id = upload_res.json()["batch_id"]
+
+        # Fetch batch by ID
+        get_res = await client.get(f"/api/batches/{batch_id}")
+        assert get_res.status_code == 200
+        batch_data = get_res.json()
+
+        assert batch_data["batch_id"] == batch_id
+        assert batch_data["total_scans"] == 2
+        assert batch_data["successful_scans"] == 2
+        assert batch_data["total_detections"] == 2
+        assert batch_data["class_counts"] == {"pipeline": 1, "debris": 1}
+        assert batch_data["data_source"].upper() == "SIMULATED"
+
+        # Verify scans inside batch
+        scans = batch_data["scans"]
+        assert len(scans) == 2
+
+        # Verify scan with detections
+        det_scan = next(s for s in scans if s["scan_identity"] == "scan_det")
+        assert det_scan["detection_count"] == 2
+        assert len(det_scan["detections"]) == 2
+        for d in det_scan["detections"]:
+            assert d["target_latitude"] is not None
+            assert d["target_longitude"] is not None
+
+        # Verify zero-detection scan is preserved
+        zero_scan = next(s for s in scans if s["scan_identity"] == "scan_zero")
+        assert zero_scan["detection_count"] == 0
+        assert len(zero_scan["detections"]) == 0
+
+    @pytest.mark.asyncio
+    async def test_get_batch_404_for_unknown_id(self, client: AsyncClient) -> None:
+        """GET /api/batches/{batch_id} returns 404 for unknown batch ID."""
+        res = await client.get("/api/batches/batch_nonexistent_000000")
+        assert res.status_code == 404
+        assert "not found" in res.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    async def test_batch_json_report(
+        self, client: AsyncClient, mock_detector: MagicMock
+    ) -> None:
+        """GET /api/batches/{batch_id}/report/json returns valid batch report JSON."""
+        from app.detection.yolo_detector import Detection as YOLODetection
+
+        mock_detector.detect.return_value = [
+            YOLODetection(
+                class_id=1,
+                class_name="wreck",
+                confidence=0.95,
+                x1=5.0,
+                y1=5.0,
+                x2=25.0,
+                y2=25.0,
+            )
+        ]
+        csv_content = _nav_header() + _nav_row(
+            "scan_wreck.jpg",
+            lat=15.0,
+            lon=73.0,
+            det_idx="0",
+            range_m="50.0",
+            range_type="SLANT",
+            bearing="30.0",
+        )
+        files = _build_files(csv_content, {"scan_wreck.jpg": _make_dummy_image()})
+        upload_res = await client.post("/api/batches/analyze", files=files)
+        batch_id = upload_res.json()["batch_id"]
+
+        report_res = await client.get(f"/api/batches/{batch_id}/report/json")
+        assert report_res.status_code == 200
+        report = report_res.json()
+
+        assert report["batch_id"] == batch_id
+        assert report["report_metadata"]["report_title"] == "DRISHTI-SSS Sonar Investigation Report"
+        assert "provenance" in report
+        assert "Deterministic geometry" in report["provenance"]["geolocation_data"]
+        assert "NOT predicted by AI" in report["provenance"]["geolocation_data"]
+
+        stats = report["survey_statistics"]
+        assert stats["total_scans"] == 1
+        assert stats["successful_scans"] == 1
+        assert stats["total_detections"] == 1
+        assert stats["mapped_detections"] == 1
+        assert stats["class_counts"] == {"wreck": 1}
+
+        assert len(report["scans"]) == 1
+        assert len(report["all_detections"]) == 1
+        det = report["all_detections"][0]
+        assert det["class_name"] == "wreck"
+        assert det["target_latitude"] is not None
+        assert det["target_longitude"] is not None
+        assert det["batch_id"] == batch_id
+
+    @pytest.mark.asyncio
+    async def test_batch_geojson_report(
+        self, client: AsyncClient, mock_detector: MagicMock
+    ) -> None:
+        """GET /api/batches/{batch_id}/report/geojson returns RFC 7946 FeatureCollection."""
+        from app.detection.yolo_detector import Detection as YOLODetection
+
+        mock_detector.detect.return_value = [
+            YOLODetection(
+                class_id=0,
+                class_name="pipeline",
+                confidence=0.87,
+                x1=10.0,
+                y1=10.0,
+                x2=30.0,
+                y2=30.0,
+            )
+        ]
+        csv_content = _nav_header() + _nav_row(
+            "scan_pipe.jpg",
+            lat=18.0,
+            lon=72.0,
+            det_idx="0",
+            range_m="45.0",
+            range_type="GROUND",
+            bearing="120.0",
+        )
+        files = _build_files(csv_content, {"scan_pipe.jpg": _make_dummy_image()})
+        upload_res = await client.post("/api/batches/analyze", files=files)
+        batch_id = upload_res.json()["batch_id"]
+
+        geojson_res = await client.get(f"/api/batches/{batch_id}/report/geojson")
+        assert geojson_res.status_code == 200
+        geojson = geojson_res.json()
+
+        assert geojson["type"] == "FeatureCollection"
+        assert len(geojson["features"]) == 1
+
+        feature = geojson["features"][0]
+        assert feature["type"] == "Feature"
+        assert feature["geometry"]["type"] == "Point"
+
+        # Coordinates must be [longitude, latitude]
+        coords = feature["geometry"]["coordinates"]
+        assert len(coords) == 2
+        lon, lat = coords
+        assert pytest.approx(lon, abs=0.1) == 72.0
+        assert pytest.approx(lat, abs=0.1) == 18.0
+
+        # Properties
+        props = feature["properties"]
+        assert props["batch_id"] == batch_id
+        assert props["class_name"] == "pipeline"
+        assert props["confidence"] == pytest.approx(0.87)
+        assert props["detection_source"] == "AI_YOLO"
+        assert props["geolocation_method"] == "DETERMINISTIC_GEOMETRY"
+
+    @pytest.mark.asyncio
+    async def test_batch_pdf_report(
+        self, client: AsyncClient, mock_detector: MagicMock
+    ) -> None:
+        """GET /api/batches/{batch_id}/report/pdf returns valid PDF binary document."""
+        mock_detector.detect.return_value = []
+        csv_content = (
+            _nav_header()
+            + _nav_row("scan_pdf1.jpg", lat=14.0, lon=74.0)
+            + _nav_row("scan_pdf2.jpg", lat=14.1, lon=74.1)
+        )
+        files = _build_files(
+            csv_content,
+            {"scan_pdf1.jpg": _make_dummy_image(), "scan_pdf2.jpg": _make_dummy_image()},
+        )
+        upload_res = await client.post("/api/batches/analyze", files=files)
+        batch_id = upload_res.json()["batch_id"]
+
+        pdf_res = await client.get(f"/api/batches/{batch_id}/report/pdf")
+        assert pdf_res.status_code == 200
+        assert pdf_res.headers["content-type"] == "application/pdf"
+        assert f"drishti_sss_batch_{batch_id}_report.pdf" in pdf_res.headers["content-disposition"]
+        assert pdf_res.content.startswith(b"%PDF")
+        assert len(pdf_res.content) > 1000
+
+    @pytest.mark.asyncio
+    async def test_batch_reports_404_for_unknown_id(self, client: AsyncClient) -> None:
+        """Report endpoints return 404 for unknown batch ID."""
+        for endpoint in ["report/json", "report/geojson", "report/pdf"]:
+            res = await client.get(f"/api/batches/batch_nonexistent_123/{endpoint}")
+            assert res.status_code == 404

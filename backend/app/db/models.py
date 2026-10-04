@@ -84,6 +84,61 @@ class DataSource(str, enum.Enum):
 
 
 # ---------------------------------------------------------------------------
+# InvestigationBatch model
+# ---------------------------------------------------------------------------
+
+
+class InvestigationBatch(Base):
+    """
+    One ingested and processed investigation batch of sonar scans.
+
+    Columns
+    ~~~~~~~
+    id                : surrogate primary key
+    batch_id          : UUID or string identifier suitable for URLs
+    created_at        : UTC datetime of the batch creation/ingestion
+    total_scans       : total count of scans in this batch
+    successful_scans  : count of successfully processed scans
+    total_detections  : total count of detections across all scans
+    data_source       : REAL, DEMO, or SIMULATED provenance flag
+    """
+
+    __tablename__ = "investigation_batches"
+
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+    )
+    batch_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    total_scans: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    successful_scans: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_detections: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    data_source: Mapped[DataSource] = mapped_column(
+        Enum(DataSource, name="data_source_enum"),
+        nullable=False,
+        default=DataSource.REAL,
+    )
+
+    scans: Mapped[list[Scan]] = relationship(
+        "Scan",
+        back_populates="batch",
+        order_by="Scan.id",
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return (
+            f"<InvestigationBatch id={self.id!r} batch_id={self.batch_id!r} "
+            f"scans={self.total_scans!r}>"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Scan model
 # ---------------------------------------------------------------------------
 
@@ -95,6 +150,7 @@ class Scan(Base):
     Columns
     ~~~~~~~
     id                : surrogate primary key
+    batch_id          : FK → investigation_batches.batch_id (optional)
     scan_identity     : operator-assigned identifier (e.g. mission leg + frame)
     image_path        : absolute or relative path to the stored sonar image
     sonar_latitude    : WGS-84 latitude of the sonar at capture time (deg)
@@ -115,6 +171,13 @@ class Scan(Base):
         BigInteger().with_variant(Integer, "sqlite"),
         primary_key=True,
         autoincrement=True,
+    )
+
+    batch_id: Mapped[str | None] = mapped_column(
+        String(64),
+        ForeignKey("investigation_batches.batch_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
 
     scan_identity: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
@@ -146,7 +209,12 @@ class Scan(Base):
     )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # ── Relationship ──────────────────────────────────────────────────────────
+    # ── Relationships ─────────────────────────────────────────────────────────
+    batch: Mapped[InvestigationBatch | None] = relationship(
+        "InvestigationBatch",
+        back_populates="scans",
+    )
+
     detections: Mapped[list[Detection]] = relationship(
         "Detection",
         back_populates="scan",

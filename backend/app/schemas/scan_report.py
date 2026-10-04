@@ -161,6 +161,7 @@ class GeoJSONPointGeometry(BaseModel):
 class GeoJSONFeatureProperties(BaseModel):
     """Properties for a georeferenced detection Point Feature."""
 
+    batch_id: str | None = None
     scan_id: int
     scan_identity: str
     detection_id: int | None = None
@@ -195,6 +196,45 @@ class GeoJSONFeatureCollection(BaseModel):
 
     type: Literal["FeatureCollection"] = "FeatureCollection"
     features: list[GeoJSONFeature] = Field(default_factory=list)
+
+    model_config = {"from_attributes": True}
+
+
+# ---------------------------------------------------------------------------
+# Batch Report Schemas
+# ---------------------------------------------------------------------------
+
+
+class BatchSurveyStatistics(BaseModel):
+    """Overall batch statistics."""
+
+    total_scans: int
+    successful_scans: int
+    total_detections: int
+    mapped_detections: int
+    class_counts: dict[str, int] = Field(default_factory=dict)
+
+
+class BatchInvestigationDetection(InvestigationDetection):
+    """Detection item with associated scan and batch identity."""
+
+    scan_id: int
+    scan_identity: str
+    batch_id: str | None = None
+
+
+class BatchInvestigationReportJSON(BaseModel):
+    """Complete JSON investigation report for a multi-scan investigation batch."""
+
+    report_metadata: InvestigationReportMetadata = Field(default_factory=InvestigationReportMetadata)
+    metadata: InvestigationReportMetadata = Field(default_factory=InvestigationReportMetadata)
+    batch_id: str = Field(..., description="Unique investigation batch identifier")
+    created_at: datetime = Field(..., description="Timestamp of batch creation")
+    data_source: str = Field(..., description="Data provenance (REAL, DEMO, SIMULATED)")
+    provenance: ProvenanceMetadata = Field(default_factory=ProvenanceMetadata)
+    survey_statistics: BatchSurveyStatistics = Field(..., description="Overall batch survey metrics")
+    scans: list[InvestigationReportJSON] = Field(default_factory=list, description="Per-scan investigation reports")
+    all_detections: list[BatchInvestigationDetection] = Field(default_factory=list, description="All detections across all scans")
 
     model_config = {"from_attributes": True}
 
@@ -315,6 +355,7 @@ def build_geojson_investigation_report(scan: DB_Scan) -> GeoJSONFeatureCollectio
             coordinates=[float(d.target_longitude), float(d.target_latitude)],
         )
         props = GeoJSONFeatureProperties(
+            batch_id=getattr(scan, "batch_id", None),
             scan_id=scan.id,
             scan_identity=scan.scan_identity,
             detection_id=d.id,
@@ -343,3 +384,114 @@ def build_geojson_investigation_report(scan: DB_Scan) -> GeoJSONFeatureCollectio
         type="FeatureCollection",
         features=features,
     )
+
+
+def build_batch_json_investigation_report(batch: Any) -> BatchInvestigationReportJSON:
+    """
+    Construct a deterministic Batch JSON Investigation Report from an InvestigationBatch entity.
+    """
+    data_source_str = (
+        batch.data_source.value
+        if hasattr(batch.data_source, "value")
+        else str(batch.data_source)
+    )
+
+    scans_sorted = sorted(batch.scans or [], key=lambda s: getattr(s, "id", 0) or 0)
+    scan_reports: list[InvestigationReportJSON] = []
+    all_detections: list[BatchInvestigationDetection] = []
+    class_counts: dict[str, int] = {}
+    mapped_count = 0
+
+    for scan in scans_sorted:
+        scan_report = build_json_investigation_report(scan)
+        scan_reports.append(scan_report)
+        for d in scan_report.detections:
+            class_counts[d.class_name] = class_counts.get(d.class_name, 0) + 1
+            if d.target_latitude is not None and d.target_longitude is not None:
+                mapped_count += 1
+            all_detections.append(
+                BatchInvestigationDetection(
+                    **d.model_dump(),
+                    scan_id=scan.id,
+                    scan_identity=scan.scan_identity,
+                    batch_id=batch.batch_id,
+                )
+            )
+
+    stats = BatchSurveyStatistics(
+        total_scans=batch.total_scans,
+        successful_scans=len(scan_reports),
+        total_detections=len(all_detections),
+        mapped_detections=mapped_count,
+        class_counts=class_counts,
+    )
+
+    meta = InvestigationReportMetadata(
+        generated_at=datetime.now(timezone.utc),
+    )
+
+    return BatchInvestigationReportJSON(
+        report_metadata=meta,
+        metadata=meta,
+        batch_id=batch.batch_id,
+        created_at=batch.created_at,
+        data_source=data_source_str,
+        provenance=meta.provenance,
+        survey_statistics=stats,
+        scans=scan_reports,
+        all_detections=all_detections,
+    )
+
+
+def build_batch_geojson_investigation_report(batch: Any) -> GeoJSONFeatureCollection:
+    """
+    Construct a deterministic GeoJSON FeatureCollection across all scans in an investigation batch.
+    """
+    features: list[GeoJSONFeature] = []
+    scans_sorted = sorted(batch.scans or [], key=lambda s: getattr(s, "id", 0) or 0)
+
+    for scan in scans_sorted:
+        data_source_str = (
+            scan.data_source.value
+            if hasattr(scan.data_source, "value")
+            else str(scan.data_source)
+        )
+        dets_sorted = sorted(scan.detections or [], key=lambda d: getattr(d, "id", 0) or 0)
+        for idx, d in enumerate(dets_sorted):
+            if d.target_latitude is None or d.target_longitude is None:
+                continue
+            geom = GeoJSONPointGeometry(
+                type="Point",
+                coordinates=[float(d.target_longitude), float(d.target_latitude)],
+            )
+            props = GeoJSONFeatureProperties(
+                batch_id=batch.batch_id,
+                scan_id=scan.id,
+                scan_identity=scan.scan_identity,
+                detection_id=d.id,
+                detection_index=idx,
+                class_name=d.class_name,
+                confidence=float(d.confidence),
+                range_m=float(d.range_m) if d.range_m is not None else None,
+                ground_range_m=float(d.ground_range_m) if d.ground_range_m is not None else None,
+                relative_bearing=float(d.relative_bearing) if d.relative_bearing is not None else None,
+                absolute_bearing=float(d.absolute_bearing) if d.absolute_bearing is not None else None,
+                timestamp=scan.timestamp,
+                data_source=data_source_str,
+                detection_source="AI_YOLO",
+                geolocation_method="DETERMINISTIC_GEOMETRY",
+            )
+            features.append(
+                GeoJSONFeature(
+                    type="Feature",
+                    id=d.id,
+                    geometry=geom,
+                    properties=props,
+                )
+            )
+
+    return GeoJSONFeatureCollection(
+        type="FeatureCollection",
+        features=features,
+    )
+

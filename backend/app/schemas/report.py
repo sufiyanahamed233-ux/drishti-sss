@@ -114,6 +114,7 @@ class ScanResult(BaseModel):
     """Complete scan details, including navigation, detections, and georeferencing."""
 
     id: int
+    batch_id: str | None = None
     scan_identity: str
     image_path: str
     sonar_latitude: float
@@ -158,6 +159,7 @@ class ScanResult(BaseModel):
             rel_bearing_val = getattr(data, "relative_bearing", None)
 
             scan_id = getattr(data, "id", 0)
+            batch_id_val = getattr(data, "batch_id", None)
             identity = getattr(data, "scan_identity", "")
             img_path = getattr(data, "image_path", "")
             ts = getattr(data, "timestamp", None)
@@ -169,6 +171,7 @@ class ScanResult(BaseModel):
 
             return {
                 "id": scan_id,
+                "batch_id": batch_id_val,
                 "scan_identity": identity,
                 "image_path": img_path,
                 "sonar_latitude": lat,
@@ -265,7 +268,23 @@ class BatchAnalysisRequest(BaseModel):
 class BatchAnalysisResult(BaseModel):
     """Response containing batch execution metrics and individual scan reports."""
 
+    batch_id: str | None = None
     total_scans: int
     successful_scans: int
     total_detections: int
     scans: list[ScanResult]
+
+
+class InvestigationBatchResponse(BaseModel):
+    """Complete persisted investigation batch details including class breakdown."""
+
+    batch_id: str
+    created_at: datetime
+    total_scans: int
+    successful_scans: int
+    total_detections: int
+    class_counts: dict[str, int] = Field(default_factory=dict)
+    data_source: str
+    scans: list[ScanResult] = Field(default_factory=list)
+
+    model_config = {"from_attributes": True}

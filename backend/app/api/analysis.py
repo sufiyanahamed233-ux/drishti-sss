@@ -56,6 +56,7 @@ def run_scan_analysis(
     scan_input: ScanInput,
     db: Session,
     detector: YOLODetector,
+    batch_id: str | None = None,
 ) -> ScanResult:
     """
     Process a single sonar scan through the analysis pipeline:
@@ -174,6 +175,7 @@ def run_scan_analysis(
 
     db_scan = DB_Scan(
         scan_identity=scan_identity,
+        batch_id=batch_id,
         image_path=scan_input.image_path,
         sonar_latitude=float(scan_input.sonar_latitude),
         sonar_longitude=float(scan_input.sonar_longitude),
@@ -199,22 +201,25 @@ def run_batch_analysis(
     scans: list[ScanInput],
     db: Session,
     detector: YOLODetector,
+    batch_id: str | None = None,
 ) -> BatchAnalysisResult:
     """Run analysis on a batch of scans, processing each independently."""
     results: list[ScanResult] = []
     total_detections = 0
 
     for scan_input in scans:
-        result = run_scan_analysis(scan_input, db, detector)
+        result = run_scan_analysis(scan_input, db, detector, batch_id=batch_id)
         results.append(result)
         total_detections += result.detection_count
 
     return BatchAnalysisResult(
+        batch_id=batch_id,
         total_scans=len(scans),
         successful_scans=len(results),
         total_detections=total_detections,
         scans=results,
     )
+
 
 
 # ---------------------------------------------------------------------------

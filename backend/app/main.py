@@ -98,6 +98,15 @@ def create_app() -> FastAPI:
             },
         )
 
+    # ── Database table initialization & schema migration ──────────────────────
+    try:
+        from app.db import models as _models  # noqa: F401
+        from app.db.migration import upgrade_db_schema
+        from app.db.session import engine
+        upgrade_db_schema(bind=engine)
+    except Exception:
+        pass
+
     # ── Mount API routers (Phase 3B) ──────────────────────────────────────────
     from app.api import api_router
     app.include_router(api_router)
